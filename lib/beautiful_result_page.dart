@@ -1,5 +1,4 @@
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -13,7 +12,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdf/widgets.dart' as pw;
 
 class BeautifulResultPage extends StatefulWidget {
-  final XFile image;
+  final File image;
 
   const BeautifulResultPage({super.key, required this.image});
 
@@ -47,7 +46,9 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
 
   Future<void> _startRecognition() async {
     try {
-      final String? result = await _recognizer.recognizeFromImage(widget.image);
+      final String? result = await _recognizer.recognizeFromImage(
+        XFile(widget.image.path),
+      );
       if (!mounted || result == null) {
         return;
       }

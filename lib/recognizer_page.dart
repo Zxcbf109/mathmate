@@ -26,7 +26,9 @@ class _RecognizerPageState extends State<RecognizerPage> {
 
     await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => BeautifulResultPage(image: selected)),
+      MaterialPageRoute(
+        builder: (_) => BeautifulResultPage(image: File(selected.path)),
+      ),
     );
   }
 
