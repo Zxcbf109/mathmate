@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:mathmate/beautiful_result_page.dart';
+import 'package:mathmate/chat_page.dart';
 import 'package:mathmate/geogebra_page.dart';
 import 'package:mathmate/data/history_repository.dart';
 import 'package:mathmate/data/video_recommendations.dart';
@@ -261,6 +262,14 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
                 border: InputBorder.none,
               ),
             ),
+          ),
+          IconButton(
+            onPressed: () {
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ChatPage()),
+              );
+            },
+            icon: const Icon(Icons.chat_bubble_outline_rounded),
           ),
           IconButton(
             onPressed: () {
