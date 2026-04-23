@@ -7,10 +7,10 @@ void main() {
   testWidgets('Home page shows initial recognizer UI', (
     WidgetTester tester,
   ) async {
-    await tester.pumpWidget(const MathMateApp());
+    await tester.pumpWidget(MathMateApp(checkFirstLaunch: false));
 
-    expect(find.text('拍一下，难题秒解决'), findsOneWidget);
-    expect(find.byIcon(Icons.camera_alt), findsOneWidget);
+    expect(find.text('拍照搜题'), findsOneWidget);
+    expect(find.byIcon(Icons.camera_alt_rounded), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 }

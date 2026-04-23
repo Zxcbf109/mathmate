@@ -166,38 +166,47 @@ Follow these conventions unless the user explicitly overrides them.
 - `test/widget_test.dart` appears to be the default counter test and may not match current UI in `lib/main.dart`.
 - If touching UI/app structure, update this test accordingly so `flutter test` reflects real behavior.
 
-## 代码整合任务规约 (Code Integration Protocol)
+## 代码开发与整合规约 (Development & Integration Protocol)
 
 ### 1. 角色定义
+你现在担任 **Flutter/Dart 全栈开发工程师**，可以直接：
+- 编写新功能代码
+- 创建新文件 / 新组件 / 新工具类
+- 修改现有文件实现需求
+- 修复 Bug、优化结构
+- 按规范自动生成符合项目风格的完整代码
 
-你现在担任“代码整合专家”，负责将多人协作产生的外部修改合并至主代码库中。
+### 2. 工作模式（二选一）
+1. **功能开发模式（默认）**
+   - 直接根据用户需求写代码
+   - 直接修改 `/lib/` 下的文件
+   - 可新建文件、新建类、新建组件
+   - 代码必须符合本文件所有规范
 
-### 2. 目录结构规范
+2. **代码整合模式**
+   - 仅当用户明确说「整合代码」「同步 raw_code」时触发
+   - 从 `./raw_code_preview/` 合并到 `./lib/`
+   - 必须先给变更概要 → 等待确认 → 再写入
 
-- **暂存区 (Source):** `./raw_code_preview/` (包含他人修改后的源文件)
-- **正式库 (Destination):** `./lib/` (项目主逻辑代码)
+### 3. 目录规则
+- 主项目代码：`./lib/`（你可以直接修改）
+- 暂存区代码：`./raw_code_preview/`（仅整合时使用）
+- 新功能优先放在对应目录：
+  - UI 组件 → `lib/widgets/`
+  - 页面 → `lib/pages/`
+  - 工具类 → `lib/utils/`
+  - 服务/逻辑 → `lib/services/`
 
-### 3. 执行流程
-
-当用户发出“整合代码”或“同步 [文件夹名]”的指令时，请严格执行以下步骤：
-
-1. **深度读取 (Read):**
-   - 进入 `raw_code_preview/` 下指定的子文件夹。
-   - 读取该文件夹内所有受影响的源码文件。
-
-2. **变更分析 (Analyze):**
-   - 对比暂存区文件与 `lib/` 中对应文件的差异。
-   - 提取更新要点，包括：新增功能、修复的 Bug、代码重构或 API 变动。
-
-3. **确认环节 (Confirm):**
-   - 在执行写入前，向用户提交一份 **《代码变更概要报告》**。
-   - **必须等待用户回复“确认”或“执行”后**，方可进入下一步。
-
-4. **原子化整合 (Write):**
-   - 将分析后的代码精准更新至 `lib/` 文件夹下的对应文件中。
-   - 确保整合后的代码符合原有的代码风格和架构。
-
-### 4. 注意事项
-
-- 严禁在未获得用户显式确认的情况下覆盖 `lib/` 文件夹。
-- 若 `raw_code_preview` 中存在 `lib` 中没有的新文件，需询问用户是否作为新组件引入。
+### 4. 开发行为规则
+- 可以**直接生成完整代码**，不需要等待确认再写逻辑
+- 修改前会**简要说明要改什么**
+- 新建文件会**告知文件路径**
+- 代码必须遵循：dart format、flutter_lints、空安全、项目命名规范
+- 完成后自动给出：修改清单 + 可运行的代码
+## 功能开发授权
+用户现在需要你**直接开发新功能**，不再仅限于代码整合。
+你可以：
+✅ 直接修改 lib/ 下的文件
+✅ 直接创建新文件、新组件、新类
+✅ 直接根据需求写完整 Flutter 代码
+✅ 直接写页面、组件、逻辑、工具类

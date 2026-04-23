@@ -11,6 +11,15 @@ allprojects {
     }
 }
 
+subprojects {
+    configurations.all {
+        resolutionStrategy {
+            force("androidx.core:core:1.12.0")
+            force("androidx.appcompat:appcompat:1.6.1")
+        }
+    }
+}
+
 val newBuildDir: Directory =
     rootProject.layout.buildDirectory
         .dir("../../build")

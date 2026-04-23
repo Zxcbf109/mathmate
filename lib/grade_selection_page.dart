@@ -80,6 +80,30 @@ class _GradeSelectionPageState extends State<GradeSelectionPage> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: const Color(0xFF3F51B5),
+        actions: <Widget>[
+          TextButton(
+            onPressed: () async {
+              final NavigatorState navigator = Navigator.of(context);
+              await HistoryRepository.instance.setFirstLaunchComplete();
+              if (mounted) {
+                navigator.pushAndRemoveUntil(
+                  MaterialPageRoute(
+                    builder: (_) => const MainScreen(),
+                  ),
+                  (Route<dynamic> route) => false,
+                );
+              }
+            },
+            child: const Text(
+              '跳过',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF3F51B5),
+              ),
+            ),
+          ),
+        ],
       ),
       body: SafeArea(
         child: ListView(
