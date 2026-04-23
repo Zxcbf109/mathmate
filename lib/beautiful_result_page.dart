@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
-import 'package:image/image.dart' as img;
 import 'package:image_picker/image_picker.dart';
 import 'package:mathmate/data/history_models.dart';
 import 'package:mathmate/data/history_repository.dart';
@@ -13,7 +12,7 @@ import 'package:mathmate/models/pipeline_models.dart';
 import 'package:mathmate/models/pipeline_stage.dart';
 import 'package:mathmate/services/math_pipeline_service.dart';
 import 'package:mathmate/visualization/geometry_validator.dart';
-import 'package:mathmate/visualization/jxg_webview.dart';
+import 'package:mathmate/visualization_page.dart';
 import 'package:mathmate/visualization/safe_json_parser.dart';
 import 'package:open_file/open_file.dart';
 import 'package:path_provider/path_provider.dart';
@@ -306,32 +305,84 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
         text.contains('=');
   }
 
-  Future<Uint8List> _sharpenImage(Uint8List originalBytes) async {
-    try {
-      final img.Image? imageData = img.decodeImage(originalBytes);
-      if (imageData == null) {
-        return originalBytes;
-      }
-
-      img.adjustColor(imageData, contrast: 1.5, gamma: 1.1);
-      return Uint8List.fromList(img.encodeJpg(imageData, quality: 90));
-    } catch (e) {
-      debugPrint('图片处理失败: $e');
-      return originalBytes;
-    }
-  }
-
   Future<void> _exportPdf() async {
-    if (_imageBytes == null) {
-      return;
-    }
-
     try {
-      final Uint8List sharpBytes = await _sharpenImage(_imageBytes!);
       final pw.Document pdf = pw.Document();
+
       pdf.addPage(
-        pw.Page(
-          build: (pw.Context context) => pw.Image(pw.MemoryImage(sharpBytes)),
+        pw.MultiPage(
+          margin: const pw.EdgeInsets.all(40),
+          build: (pw.Context context) {
+            return <pw.Widget>[
+              pw.Header(
+                level: 0,
+                child: pw.Text(
+                  'MathMate 识别结果',
+                  style: pw.TextStyle(
+                    fontSize: 24,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Header(
+                level: 1,
+                child: pw.Text(
+                  '题目内容（OCR）',
+                  style: pw.TextStyle(
+                    fontSize: 18,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 8),
+              pw.Text(
+                _questionMarkdown.isNotEmpty
+                    ? _stripMarkdown(_questionMarkdown)
+                    : '（题目识别为空）',
+                style: const pw.TextStyle(fontSize: 12),
+              ),
+              pw.SizedBox(height: 20),
+              pw.Header(
+                level: 1,
+                child: pw.Text(
+                  '解答过程',
+                  style: pw.TextStyle(
+                    fontSize: 18,
+                    fontWeight: pw.FontWeight.bold,
+                  ),
+                ),
+              ),
+              pw.SizedBox(height: 8),
+              pw.Text(
+                _solutionMarkdown.isNotEmpty
+                    ? _stripMarkdown(_solutionMarkdown)
+                    : '（解题阶段未返回内容）',
+                style: const pw.TextStyle(fontSize: 12),
+              ),
+              if (_formulaPreview != null && _formulaPreview!.isNotEmpty) ...<pw.Widget>[
+                pw.SizedBox(height: 20),
+                pw.Header(
+                  level: 1,
+                  child: pw.Text(
+                    '公式预览',
+                    style: pw.TextStyle(
+                      fontSize: 18,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+                pw.SizedBox(height: 8),
+                pw.Container(
+                  padding: const pw.EdgeInsets.all(12),
+                  child: pw.Text(
+                    _cleanLatexForPdf(_formulaPreview!),
+                    style: const pw.TextStyle(fontSize: 14),
+                  ),
+                ),
+              ],
+            ];
+          },
         ),
       );
 
@@ -345,7 +396,7 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
       }
 
       final Directory dir = await getApplicationDocumentsDirectory();
-      final File file = File('${dir.path}/mathmate_scan.pdf');
+      final File file = File('${dir.path}/mathmate_result.pdf');
       await file.writeAsBytes(await pdf.save());
 
       if (mounted) {
@@ -361,6 +412,36 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
         ).showSnackBar(SnackBar(content: Text('导出失败: $e')));
       }
     }
+  }
+
+  String _stripMarkdown(String text) {
+    return text
+        .replaceAll(RegExp(r'\*\*([^*]+)\*\*'), r'$1')
+        .replaceAll(RegExp(r'\*([^*]+)\*'), r'$1')
+        .replaceAll(RegExp(r'#{1,6}\s*'), '')
+        .replaceAll(RegExp(r'\$+\$?([\s\S]*?)\$+\$?'), r'$1')
+        .replaceAll(RegExp(r'`([^`]+)`'), r'$1')
+        .replaceAll(RegExp(r'```[\s\S]*?```'), '')
+        .replaceAll(RegExp(r'!\[([^\]]*)\]\([^)]+\)'), '')
+        .replaceAll(RegExp(r'\[([^\]]+)\]\([^)]+\)'), r'$1')
+        .replaceAll(RegExp(r'^\s*[-*+]\s+', multiLine: true), '')
+        .replaceAll(RegExp(r'^\s*\d+\.\s+', multiLine: true), '')
+        .trim();
+  }
+
+  String _cleanLatexForPdf(String latex) {
+    return latex
+        .replaceAll(r'\begin{cases}', '')
+        .replaceAll(r'\end{cases}', '')
+        .replaceAll(r'\begin{aligned}', '')
+        .replaceAll(r'\end{aligned}', '')
+        .replaceAll(r'\\', '\n')
+        .replaceAll(r'\ ', ' ')
+        .replaceAll(r'\{', '{')
+        .replaceAll(r'\}', '}')
+        .replaceAll(r'\_', '_')
+        .replaceAll(r'\^', '^')
+        .trim();
   }
 
   void _copyFormula() {
@@ -382,7 +463,26 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
     required String content,
     String emptyText = '暂无内容',
   }) {
-    final String markdownText = content.trim().isEmpty ? emptyText : content;
+    if (content.trim().isEmpty) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(emptyText, style: const TextStyle(fontSize: 14)),
+          ),
+        ],
+      );
+    }
+
+    final List<Widget> blocks = _buildContentBlocks(content);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -396,22 +496,80 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
             color: Colors.grey[100],
             borderRadius: BorderRadius.circular(8),
           ),
-          child: MarkdownBody(
-            data: markdownText,
-            selectable: true,
-            styleSheet: MarkdownStyleSheet.fromTheme(
-              Theme.of(context),
-            ).copyWith(
-              p: const TextStyle(fontSize: 14, height: 1.45),
-              h1: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              h2: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              h3: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-              code: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
-              blockquote: const TextStyle(color: Colors.blueGrey),
-            ),
-          ),
+          child: blocks.length == 1 && blocks.first is Math
+              ? blocks.first
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: blocks
+                      .map((Widget w) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: w,
+                          ))
+                      .toList(),
+                ),
         ),
       ],
+    );
+  }
+
+  List<Widget> _buildContentBlocks(String content) {
+    final List<Widget> widgets = <Widget>[];
+    final RegExp displayMathRegex = RegExp(r'\$\$(.*?)\$\$', dotAll: true);
+
+    int lastEnd = 0;
+    for (final RegExpMatch match in displayMathRegex.allMatches(content)) {
+      if (match.start > lastEnd) {
+        final String textBefore = content.substring(lastEnd, match.start).trim();
+        if (textBefore.isNotEmpty) {
+          widgets.add(_buildMarkdownText(textBefore));
+        }
+      }
+
+      final String latex = match.group(1)?.trim() ?? '';
+      if (latex.isNotEmpty) {
+        try {
+          widgets.add(
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Center(child: Math.tex(latex, textStyle: const TextStyle(fontSize: 16))),
+            ),
+          );
+        } catch (e) {
+          widgets.add(Text(latex, style: const TextStyle(fontFamily: 'monospace')));
+        }
+      }
+
+      lastEnd = match.end;
+    }
+
+    if (lastEnd < content.length) {
+      final String textAfter = content.substring(lastEnd).trim();
+      if (textAfter.isNotEmpty) {
+        widgets.add(_buildMarkdownText(textAfter));
+      }
+    }
+
+    if (widgets.isEmpty) {
+      widgets.add(_buildMarkdownText(content));
+    }
+
+    return widgets;
+  }
+
+  Widget _buildMarkdownText(String text) {
+    return MarkdownBody(
+      data: text,
+      selectable: true,
+      styleSheet: MarkdownStyleSheet.fromTheme(
+        Theme.of(context),
+      ).copyWith(
+        p: const TextStyle(fontSize: 14, height: 1.45),
+        h1: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+        h2: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+        h3: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+        code: const TextStyle(fontSize: 13, fontFamily: 'monospace'),
+        blockquote: const TextStyle(color: Colors.blueGrey),
+      ),
     );
   }
 
@@ -529,45 +687,41 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
                           ),
                           const SizedBox(height: 20),
                         ],
-                        const Text(
-                          '几何可视化',
-                          style: TextStyle(fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          height: 280,
-                          width: double.infinity,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: Colors.blueGrey.shade100),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: _geometryScene == null
-                              ? Center(
-                                  child: Padding(
-                                    padding: const EdgeInsets.all(12),
-                                    child: Text(
-                                      _geometryMessage ?? '暂未生成可视化数据。',
-                                      textAlign: TextAlign.center,
-                                      style: const TextStyle(
-                                        color: Colors.blueGrey,
-                                      ),
+                        if (_geometryScene != null)
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => VisualizationPage(
+                                      scene: _geometryScene!,
+                                      title: '几何可视化',
                                     ),
                                   ),
-                                )
-                              : JxgWebView(
-                                  scene: _geometryScene!,
-                                  onEngineError: (String message) {
-                                    if (!mounted) {
-                                      return;
-                                    }
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(content: Text(message)),
-                                    );
-                                  },
-                                ),
-                        ),
+                                );
+                              },
+                              icon: const Icon(Icons.visibility_outlined),
+                              label: const Text('查看几何可视化'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF3F51B5),
+                              ),
+                            ),
+                          )
+                        else
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.grey[100],
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Text(
+                              _geometryMessage ?? '暂未生成可视化数据。',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.blueGrey),
+                            ),
+                          ),
                         const SizedBox(height: 20),
                         Center(
                           child: ElevatedButton.icon(

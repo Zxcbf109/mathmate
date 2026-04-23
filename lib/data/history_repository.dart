@@ -4,8 +4,12 @@ import 'package:flutter/foundation.dart';
 import 'package:isar/isar.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mathmate/data/history_models.dart';
 import 'package:mathmate/visualization/safe_json_parser.dart';
+
+const String _kIsFirstLaunch = 'is_first_launch';
+const String _kGradeLevel = 'grade_level';
 
 class HistoryRepository {
   HistoryRepository._();
@@ -114,5 +118,25 @@ class HistoryRepository {
     }
 
     return copied;
+  }
+
+  Future<bool> isFirstLaunch() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_kIsFirstLaunch) ?? true;
+  }
+
+  Future<void> setFirstLaunchComplete() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_kIsFirstLaunch, false);
+  }
+
+  Future<int?> getGradeLevel() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getInt(_kGradeLevel);
+  }
+
+  Future<void> setGradeLevel(int grade) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_kGradeLevel, grade);
   }
 }

@@ -1,20 +1,30 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:mathmate/beautiful_result_page.dart';
+import 'package:mathmate/geogebra_page.dart';
 import 'package:mathmate/data/history_repository.dart';
+import 'package:mathmate/data/video_recommendations.dart';
+import 'package:mathmate/grade_selection_page.dart';
 import 'package:mathmate/history_list_page.dart';
 import 'package:mathmate/profile_page.dart';
 import 'package:mathmate/services/scanner_service.dart';
+import 'package:mathmate/services/video_recommendation_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await HistoryRepository.instance.init();
-  runApp(const MathMateApp());
+
+  final bool isFirst = await HistoryRepository.instance.isFirstLaunch();
+  runApp(MathMateApp(checkFirstLaunch: isFirst));
 }
 
 class MathMateApp extends StatelessWidget {
-  const MathMateApp({super.key});
+  final bool checkFirstLaunch;
+
+  const MathMateApp({super.key, required this.checkFirstLaunch});
 
   @override
   Widget build(BuildContext context) {
@@ -24,7 +34,7 @@ class MathMateApp extends StatelessWidget {
         useMaterial3: true,
         colorSchemeSeed: const Color(0xFF3F51B5),
       ),
-      home: const MainScreen(),
+      home: checkFirstLaunch ? const GradeSelectionPage() : const MainScreen(),
     );
   }
 }
@@ -95,9 +105,56 @@ class QuestionHomePage extends StatefulWidget {
 
 class _QuestionHomePageState extends State<QuestionHomePage> {
   final ScannerService _scannerService = ScannerService();
+  final VideoRecommendationService _recommendationService =
+      VideoRecommendationService();
 
   bool _isScanning = false;
   String _scanStatus = '拍照难题';
+  bool _isRefreshing = false;
+  List<VideoInfo> _recommendedVideos = <VideoInfo>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadGradeLevelAndVideos();
+  }
+
+  Future<void> _loadGradeLevelAndVideos() async {
+    final int? grade = await HistoryRepository.instance.getGradeLevel();
+    if (mounted) {
+      setState(() {
+        _recommendedVideos = getVideosByGrade(grade);
+      });
+    }
+  }
+
+  Future<void> _onRefresh() async {
+    if (_isRefreshing) return;
+
+    setState(() {
+      _isRefreshing = true;
+    });
+
+    try {
+      final List<String> keywords =
+          await _recommendationService.extractKeywords('函数 椭圆 几何');
+      if (keywords.isNotEmpty) {
+        final List<VideoInfo> matched =
+            getVideosByKeywords(keywords);
+        if (matched.isNotEmpty) {
+          setState(() {
+            _recommendedVideos = matched;
+          });
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isRefreshing = false;
+        });
+      }
+    }
+  }
 
   Future<void> _scanAndOpenResult() async {
     if (_isScanning) {
@@ -140,26 +197,39 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
     return Scaffold(
       backgroundColor: const Color(0xFFF7FAFF),
       body: SafeArea(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              _buildSearchBar(),
-              const SizedBox(height: 18),
-              _buildCameraHero(),
-              const SizedBox(height: 14),
-              _buildToolboxCard(),
-              const SizedBox(height: 16),
-              const Text(
-                '数学视频推荐',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
-              ),
-              const SizedBox(height: 10),
-              _buildVideoList(),
-              const SizedBox(height: 18),
-              _buildAssistantCard(),
-            ],
+        child: RefreshIndicator(
+          onRefresh: _onRefresh,
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                _buildSearchBar(),
+                const SizedBox(height: 18),
+                _buildCameraHero(),
+                const SizedBox(height: 14),
+                _buildToolboxCard(),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: <Widget>[
+                    const Text(
+                      '数学视频推荐',
+                      style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                    if (_isRefreshing)
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                _buildVideoList(),
+              ],
+            ),
           ),
         ),
       ),
@@ -191,10 +261,6 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
                 border: InputBorder.none,
               ),
             ),
-          ),
-          IconButton(
-            onPressed: _scanAndOpenResult,
-            icon: const Icon(Icons.camera_alt_outlined),
           ),
           IconButton(
             onPressed: () {
@@ -308,13 +374,79 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
           ),
         ],
       ),
-      child: const Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(Icons.work_outline_rounded, color: Color(0xFF3F51B5)),
-          SizedBox(width: 10),
-          Text(
-            '数学工具箱',
-            style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+          const Row(
+            children: <Widget>[
+              Icon(Icons.work_outline_rounded, color: Color(0xFF3F51B5)),
+              SizedBox(width: 10),
+              Text(
+                '数学工具箱',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 10,
+              mainAxisSpacing: 10,
+              childAspectRatio: 1.5,
+            ),
+            itemCount: 3,
+            itemBuilder: (BuildContext context, int index) {
+              final List<Map<String, dynamic>> tools = <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'icon': Icons.calculate_outlined,
+                  'name': '计算器',
+                  'onTap': () {},
+                },
+                <String, dynamic>{
+                  'icon': Icons.show_chart,
+                  'name': '几何画板',
+                  'onTap': () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const GeogebraPage()),
+                    );
+                  },
+                },
+                <String, dynamic>{
+                  'icon': Icons.functions_outlined,
+                  'name': '函数绘图',
+                  'onTap': () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const GeogebraPage()),
+                    );
+                  },
+                },
+              ];
+
+              final Map<String, dynamic> tool = tools[index];
+              return GestureDetector(
+                onTap: tool['onTap'] as VoidCallback,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.blue[50],
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: <Widget>[
+                      Icon(tool['icon'] as IconData, color: const Color(0xFF3F51B5)),
+                      const SizedBox(height: 4),
+                      Text(
+                        tool['name'] as String,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ),
@@ -322,130 +454,34 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
   }
 
   Widget _buildVideoList() {
-    const List<_VideoCardData> videos = <_VideoCardData>[
-      _VideoCardData(title: '图形解说', subtitle: '函数变化与图像'),
-      _VideoCardData(title: '计算的基础', subtitle: '快速掌握通用套路'),
-      _VideoCardData(title: '几何专题', subtitle: '角度与面积关系'),
-    ];
+    final List<VideoInfo> videos = _recommendedVideos;
+
+    if (videos.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(16),
+        child: const Text(
+          '下拉刷新获取推荐视频',
+          style: TextStyle(color: Colors.grey),
+        ),
+      );
+    }
 
     return SizedBox(
-      height: 132,
+      height: 160,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: videos.length,
         separatorBuilder: (BuildContext context, int index) =>
             const SizedBox(width: 10),
         itemBuilder: (BuildContext context, int index) {
-          final _VideoCardData item = videos[index];
-          return Container(
-            width: 210,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              gradient: const LinearGradient(
-                colors: <Color>[Color(0xFFE8EEFF), Color(0xFFDDE6FF)],
-              ),
-              boxShadow: const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x12000000),
-                  blurRadius: 8,
-                  offset: Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Align(
-                  alignment: Alignment.topRight,
-                  child: Container(
-                    width: 30,
-                    height: 30,
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.play_arrow_rounded,
-                      color: Color(0xFF3F51B5),
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                Text(
-                  item.title,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  item.subtitle,
-                  style: TextStyle(color: Colors.blueGrey.shade700, fontSize: 12),
-                ),
-              ],
-            ),
-          );
+          final VideoInfo item = videos[index];
+          return _VideoCard(video: item);
         },
       ),
     );
   }
 
-  Widget _buildAssistantCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x12000000),
-            blurRadius: 12,
-            offset: Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: const Color(0xFFE8EEFF),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.smart_toy_outlined, color: Color(0xFF3F51B5)),
-              ),
-              const SizedBox(width: 10),
-              const Text(
-                '我是 MathMate AI 助手',
-                style: TextStyle(fontWeight: FontWeight.w700),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF5F8FF),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Text(
-              '示例题目：求数列的前n项和',
-              style: TextStyle(fontSize: 14),
-            ),
-          ),
-        ],
-      ),
-    );
   }
-}
 
 class NotesPage extends StatelessWidget {
   const NotesPage({super.key});
@@ -462,13 +498,6 @@ class NotesPage extends StatelessWidget {
       ),
     );
   }
-}
-
-class _VideoCardData {
-  final String title;
-  final String subtitle;
-
-  const _VideoCardData({required this.title, required this.subtitle});
 }
 
 class _FunctionWavePainter extends CustomPainter {
@@ -504,4 +533,138 @@ class _FunctionWavePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _VideoCard extends StatefulWidget {
+  final VideoInfo video;
+
+  const _VideoCard({required this.video});
+
+  @override
+  State<_VideoCard> createState() => _VideoCardState();
+}
+
+class _VideoCardState extends State<_VideoCard> {
+  String? _coverUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCover();
+  }
+
+  Future<void> _loadCover() async {
+    final String url = await widget.video.getCoverUrl();
+    if (mounted) {
+      setState(() {
+        _coverUrl = url;
+      });
+    }
+  }
+
+  Future<void> _openVideo() async {
+    final Uri url = Uri.parse(widget.video.url);
+    if (await canLaunchUrl(url)) {
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: _openVideo,
+      child: Container(
+        width: 160,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(12),
+          color: Colors.white,
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x12000000),
+              blurRadius: 8,
+              offset: Offset(0, 2),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: Stack(
+            fit: StackFit.expand,
+          children: <Widget>[
+            if (_coverUrl != null && _coverUrl!.isNotEmpty)
+              CachedNetworkImage(
+                imageUrl: _coverUrl!,
+                fit: BoxFit.cover,
+                placeholder: (BuildContext context, String url) =>
+                    Container(color: Colors.grey[200]),
+                errorWidget: (BuildContext context, String url, Object error) =>
+                    Container(
+                  color: const Color(0xFFE8EEFF),
+                  child: const Icon(Icons.video_library,
+                      color: Color(0xFF3F51B5), size: 40),
+                ),
+              )
+            else
+              Container(
+                color: const Color(0xFFE8EEFF),
+                child: const Icon(Icons.video_library,
+                    color: Color(0xFF3F51B5), size: 40),
+              ),
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: <Color>[Colors.transparent, Colors.black54],
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      widget.video.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.video.subtitle,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontSize: 10,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const Positioned(
+              top: 8,
+              right: 8,
+              child: CircleAvatar(
+                radius: 14,
+                backgroundColor: Colors.white,
+                child: Icon(Icons.play_arrow,
+                    color: Color(0xFF3F51B5), size: 18),
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
 }
