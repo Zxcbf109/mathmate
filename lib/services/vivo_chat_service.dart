@@ -33,26 +33,25 @@ class VivoAiChatService {
     await _ensureEnvLoaded();
 
     final String apiKey = (dotenv.env[_apiKeyEnv] ?? '').trim();
-    final String modelId = (dotenv.env[_modelEnv] ?? '').trim();
+    final String modelId = (dotenv.env[_modelEnv] ?? 'Volc-DeepSeek-V3.2').trim();
 
     if (apiKey.isEmpty) {
       throw Exception('Missing env config: VIVO_API_KEY');
-    }
-    if (modelId.isEmpty) {
-      throw Exception('Missing env config: VIVO_MODEL_ID');
     }
 
     final List<Map<String, String>> formattedMessages =
         messages.map((m) => m.toMap()).toList();
 
     final Map<String, String> headers = <String, String>{
-      'Content-Type': 'application/json',
+      'Content-Type': 'application/json; charset=utf-8',
       'Authorization': 'Bearer $apiKey',
     };
 
     final Map<String, dynamic> body = <String, dynamic>{
       'model': modelId,
       'messages': formattedMessages,
+      'temperature': 0.7,
+      'max_tokens': 2048,
     };
 
     final http.Response response = await http.post(
@@ -72,8 +71,7 @@ class VivoAiChatService {
   }
 
   String _extractContent(dynamic data) {
-    final dynamic content =
-        data['choices']?[0]?['message']?['content'];
+    final dynamic content = data['choices']?[0]?['message']?['content'];
     if (content is String) {
       return content.trim();
     }
