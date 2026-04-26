@@ -72,7 +72,8 @@ class _ProfilePageState extends State<ProfilePage> {
                     onTap: () async {
                       final int? result = await Navigator.of(context).push<int>(
                         MaterialPageRoute(
-                          builder: (_) => const GradeSelectionPage(isFromSettings: true),
+                          builder: (_) =>
+                              const GradeSelectionPage(isFromSettings: true),
                         ),
                       );
                       if (result != null && mounted) {
@@ -244,10 +245,7 @@ class _MenuCard extends StatelessWidget {
                   ),
                 ),
               ),
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: Color(0xFFB3BCCB),
-              ),
+              const Icon(Icons.chevron_right_rounded, color: Color(0xFFB3BCCB)),
             ],
           ),
         ),

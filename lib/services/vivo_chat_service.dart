@@ -11,15 +11,16 @@ class VivoChatMessage {
   VivoChatMessage({required this.role, required this.content});
 
   Map<String, String> toMap() => <String, String>{
-        'role': role,
-        'content': content,
-      };
+    'role': role,
+    'content': content,
+  };
 }
 
 class VivoAiChatService {
   static const String _apiKeyEnv = 'VIVO_API_KEY';
   static const String _modelEnv = 'VIVO_MODEL_ID';
-  static const String _baseUrl = 'https://api-ai.vivo.com.cn/v1/chat/completions';
+  static const String _baseUrl =
+      'https://api-ai.vivo.com.cn/v1/chat/completions';
 
   static bool _dotenvLoaded = false;
 
@@ -33,14 +34,16 @@ class VivoAiChatService {
     await _ensureEnvLoaded();
 
     final String apiKey = (dotenv.env[_apiKeyEnv] ?? '').trim();
-    final String modelId = (dotenv.env[_modelEnv] ?? 'Volc-DeepSeek-V3.2').trim();
+    final String modelId = (dotenv.env[_modelEnv] ?? 'Volc-DeepSeek-V3.2')
+        .trim();
 
     if (apiKey.isEmpty) {
       throw Exception('Missing env config: VIVO_API_KEY');
     }
 
-    final List<Map<String, String>> formattedMessages =
-        messages.map((m) => m.toMap()).toList();
+    final List<Map<String, String>> formattedMessages = messages
+        .map((m) => m.toMap())
+        .toList();
 
     final Map<String, String> headers = <String, String>{
       'Content-Type': 'application/json; charset=utf-8',

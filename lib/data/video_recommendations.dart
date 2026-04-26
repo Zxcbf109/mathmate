@@ -15,9 +15,6 @@ class VideoInfo {
     required this.keywords,
   });
 
-  String get url =>
-      'https://www.bilibili.com/video/$bvId/?spm_id_from=333.337.search-card.all.click&vd_source=5d6add47d5117935b61df3a47eaa2266';
-
   Future<String> getCoverUrl() async {
     if (_coverUrl != null) return _coverUrl!;
 
@@ -137,8 +134,9 @@ List<VideoInfo> getVideosByKeywords(List<String> keywords) {
   final List<VideoInfo> matched = <VideoInfo>[];
   for (final VideoInfo video in allVideos) {
     for (final String keyword in keywords) {
-      if (video.keywords
-          .any((k) => k.toLowerCase().contains(keyword.toLowerCase()))) {
+      if (video.keywords.any(
+        (k) => k.toLowerCase().contains(keyword.toLowerCase()),
+      )) {
         matched.add(video);
         break;
       }

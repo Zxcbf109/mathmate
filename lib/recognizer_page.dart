@@ -17,19 +17,28 @@ class _RecognizerPageState extends State<RecognizerPage> {
   XFile? _image;
 
   Future<void> _processImage(ImageSource source) async {
-    final XFile? selected = await _picker.pickImage(source: source);
-    if (selected == null || !mounted) return;
+    try {
+      final XFile? selected = await _picker.pickImage(source: source);
+      if (selected == null || !mounted) return;
 
-    setState(() {
-      _image = selected;
-    });
+      setState(() {
+        _image = selected;
+      });
 
-    await Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => BeautifulResultPage(image: File(selected.path)),
-      ),
-    );
+      await Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => BeautifulResultPage(image: File(selected.path)),
+        ),
+      );
+    } catch (e) {
+      debugPrint('RecognizerPage: 拍照/选图失败: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('操作失败，请检查相机权限是否已开启')),
+        );
+      }
+    }
   }
 
   @override

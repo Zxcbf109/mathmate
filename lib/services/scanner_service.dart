@@ -55,7 +55,9 @@ class ScannerService {
 
       final File scannedFile = File(croppedFile.path);
       if (!await scannedFile.exists()) {
-        debugPrint('ScannerService: cropped file not found at ${croppedFile.path}');
+        debugPrint(
+          'ScannerService: cropped file not found at ${croppedFile.path}',
+        );
         return null;
       }
 

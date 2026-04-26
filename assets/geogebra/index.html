@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GeoGebra</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            position: fixed;
+            background: #ffffff;
+        }
+        #ggb-element {
+            width: 100%; height: 100%;
+            position: absolute; top: 0; left: 0;
+        }
+        #loading {
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #666;
+            font-family: sans-serif;
+            z-index: 10;
+        }
+        #loading .spinner {
+            width: 40px; height: 40px;
+            margin: 0 auto 12px;
+            border: 4px solid #e0e0e0;
+            border-top-color: #3F51B5;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        #error {
+            display: none;
+            position: absolute; top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #d32f2f;
+            font-family: sans-serif;
+            z-index: 10;
+            padding: 20px;
+        }
+        #error button {
+            margin-top: 12px;
+            padding: 8px 24px;
+            background: #3F51B5;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <div id="loading">
+        <div class="spinner"></div>
+        <span>GeoGebra 加载中...</span>
+    </div>
+    <div id="error">
+        <p>GeoGebra 加载失败</p>
+        <button onclick="location.reload()">重试</button>
+    </div>
+    <div id="ggb-element"></div>
+
+    <script src="deployggb.js"></script>
+    <script>
+        // 在全局挂载回调，供 Flutter 通过 evaluateJavascript 调用
+        window.GeogebraBridge = {
+            _ready: false,
+            _applet: null,
+
+            onReady: function() {
+                this._ready = true;
+                // 通知 Flutter 已就绪
+                if (window.FlutterChannel) {
+                    window.FlutterChannel.postMessage('ready');
+                }
+            },
+
+            onError: function(msg) {
+                if (window.FlutterChannel) {
+                    window.FlutterChannel.postMessage('error:' + msg);
+                }
+            },
+
+            // 设置表达式（函数绘图模式）
+            setExpression: function(expr) {
+                if (this._applet) {
+                    try {
+                        this._applet.setExpressionValue(expr);
+                        return true;
+                    } catch(e) {
+                        return false;
+                    }
+                }
+                return false;
+            },
+
+            // 获取当前图形 PNG (base64)
+            getPNG: function() {
+                if (this._applet) {
+                    try {
+                        return this._applet.getPNGBase64(1.0, true, 72);
+                    } catch(e) {
+                        return null;
+                    }
+                }
+                return null;
+            },
+
+            // 重置
+            reset: function() {
+                if (this._applet) {
+                    try {
+                        this._applet.reset();
+                        return true;
+                    } catch(e) {
+                        return false;
+                    }
+                }
+                return false;
+            },
+
+            // 设置绘图模式
+            setMode: function(mode) {
+                if (this._applet) {
+                    try {
+                        this._applet.setMode(mode);
+                        return true;
+                    } catch(e) {
+                        return false;
+                    }
+                }
+                return false;
+            }
+        };
+
+        var params = {
+            "appName": "graphing",
+            "width": "100%",
+            "height": "100%",
+            "showToolBar": true,
+            "showAlgebraInput": true,
+            "showMenuBar": true,
+            "allowStyleBar": true,
+            "enableLabelDrags": true,
+            "enableShiftDragZoom": true,
+            "enableRightClick": true,
+            "capturingThreshold": 3,
+            "showToolBarHelp": true,
+            "errorDialogsActive": true,
+            "useBrowserForJS": false,
+            "borderColor": "#dddddd",
+            "showResetIcon": true,
+            "enablepopup": false,
+            "scale": 1.0,
+            "appletOnLoad": function(api) {
+                // GeoGebra 已加载完成
+                var loadingEl = document.getElementById('loading');
+                if (loadingEl) loadingEl.style.display = 'none';
+
+                window.GeogebraBridge._applet = api;
+                window.GeogebraBridge.onReady();
+            }
+        };
+
+        var applet = new GGBApplet(params, true);
+        // 使用本地文件：codebase 设为 ./web3d/，offline 模式避免加载 CDN
+        applet.setHTML5Codebase('./web3d/', true);
+
+        function initGeogebra() {
+            try {
+                applet.inject('ggb-element');
+                // 设置超时检测
+                setTimeout(function() {
+                    if (!window.GeogebraBridge._ready) {
+                        var loadingEl = document.getElementById('loading');
+                        if (loadingEl) loadingEl.style.display = 'none';
+                        var errEl = document.getElementById('error');
+                        if (errEl) errEl.style.display = 'block';
+                        if (window.FlutterChannel) {
+                            window.FlutterChannel.postMessage('error:timeout');
+                        }
+                    }
+                }, 30000);
+            } catch(e) {
+                document.getElementById('loading').style.display = 'none';
+                document.getElementById('error').style.display = 'block';
+                if (window.FlutterChannel) {
+                    window.FlutterChannel.postMessage('error:' + e.message);
+                }
+            }
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initGeogebra);
+        } else {
+            initGeogebra();
+        }
+    </script>
+</body>
+</html>

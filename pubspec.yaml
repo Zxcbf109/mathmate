@@ -32,12 +32,12 @@ dependencies:
     sdk: flutter
   http: ^1.1.0
   image_picker: ^1.0.0
-  image_cropper: ^8.0.2
+  image_cropper: ^12.0.0
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
-  flutter_dotenv: ^5.2.1
+  flutter_dotenv: ^6.0.0
   flutter_math_fork: ^0.7.2+1
   flutter_markdown_plus: ^1.0.7
   cached_network_image: ^3.4.1
@@ -49,10 +49,13 @@ dependencies:
   path: ^1.9.1
   path_provider: ^2.1.5
   pdf: ^3.11.3
-  permission_handler: ^11.3.1
+  permission_handler: ^12.0.0
   shared_preferences: ^2.5.3
   url_launcher: ^6.3.1
   webview_flutter: ^4.10.0
+  flutter_quill: ^11.5.0
+  share_plus: ^10.0.0
+  webview_windows: ^0.4.0
 
 dev_dependencies:
   flutter_test:
@@ -82,6 +85,10 @@ flutter:
     - assets/visualization/index.html
     - assets/visualization/jxg_engine.js
     - assets/visualization/jsxgraphcore.js
+    - assets/geogebra/index.html
+    - assets/geogebra/deployggb.js
+    - assets/geogebra/web3d/web3d.nocache.js
+    - assets/geogebra/web3d/0C7057AD68C986E5B1859BFB332A1012.cache.js
 
   # To add assets to your application, add an assets section, like this:
   # assets:

@@ -8,6 +8,8 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        maven { url = uri("https://maven.aliyun.com/repository/google/") }
+        maven { url = uri("https://maven.aliyun.com/repository/public/") }
     }
 }
 
@@ -16,6 +18,8 @@ subprojects {
         resolutionStrategy {
             force("androidx.core:core:1.12.0")
             force("androidx.appcompat:appcompat:1.6.1")
+            force("androidx.startup:startup-runtime:1.2.0")
+            force("androidx.annotation:annotation:1.7.0")
         }
     }
 }
@@ -46,6 +50,21 @@ subprojects {
 
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
+}
+
+// 修复 android:lStar 在 compileSdk 36 中被移除的问题
+subprojects {
+    tasks.matching { it.name.contains("verifyReleaseResources") }.configureEach {
+        doFirst {
+            val valuesFile = file("${buildDir}/intermediates/merged_res/release/mergeReleaseResources/values/values.xml")
+            if (valuesFile.exists()) {
+                val content = valuesFile.readText()
+                if (content.contains("android:lStar")) {
+                    valuesFile.writeText(content.replace("<attr name=\"android:lStar\"/>", "<!-- removed: android:lStar not in compileSdk 36 -->"))
+                }
+            }
+        }
+    }
 }
 
 subprojects {
