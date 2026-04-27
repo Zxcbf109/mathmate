@@ -127,10 +127,6 @@ class _HistoryCard extends StatelessWidget {
         '${t.year.toString().padLeft(4, '0')}-${t.month.toString().padLeft(2, '0')}-${t.day.toString().padLeft(2, '0')} '
         '${t.hour.toString().padLeft(2, '0')}:${t.minute.toString().padLeft(2, '0')}';
 
-    final String preview = item.latexResult.trim().isEmpty
-        ? '无公式预览'
-        : item.latexResult.trim().replaceAll('\n', ' ');
-
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
@@ -194,8 +190,8 @@ class _HistoryCard extends StatelessWidget {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        preview,
-                        maxLines: 3,
+                        item.title.isEmpty ? '数学问题' : item.title,
+                        maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           fontSize: 14,

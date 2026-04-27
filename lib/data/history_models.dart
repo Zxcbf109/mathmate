@@ -12,6 +12,7 @@ class MathHistory {
   late String ocrContent;
   late String solutionMarkdown;
   late String latexResult;
+  String title = '';  // 千问生成的标题
 
   GeometrySceneEmbedded? geometryScene;
 }

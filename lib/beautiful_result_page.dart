@@ -43,7 +43,6 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
   Uint8List? _imageBytes;
   String _questionMarkdown = '';
   String _solutionMarkdown = '';
-  String? _formulaPreview;
   Map<String, dynamic>? _geometryScene;
   String? _geometryMessage;
   List<String> _stageErrors = <String>[];
@@ -108,10 +107,6 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
           result.recognize?.questionMarkdown.trim() ?? '';
       final String solutionMarkdown =
           result.solve?.solutionMarkdown.trim() ?? '';
-      final String formulaPreview = _extractFormulaPreview(
-        '$questionMarkdown\n$solutionMarkdown',
-      );
-      final String cleanedLatex = _cleanLatex(formulaPreview);
 
       final VisualizeResult? visualize = result.visualize;
       final String? geometryMessage = visualize?.scene != null
@@ -122,7 +117,6 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
         _isAnalyzing = false;
         _questionMarkdown = questionMarkdown;
         _solutionMarkdown = solutionMarkdown;
-        _formulaPreview = cleanedLatex.isEmpty ? null : cleanedLatex;
         _geometryScene = visualize?.scene;
         _geometryMessage = geometryMessage;
         _stageErrors = List<String>.from(result.stageErrors);
@@ -151,9 +145,6 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
     final GeometrySceneEmbedded? scene = history.geometryScene;
     final Map<String, dynamic>? sceneMap = scene?.toMap();
 
-    final String formulaPreview = _extractFormulaPreview(history.latexResult);
-    final String cleanedLatex = _cleanLatex(formulaPreview);
-
     final Map<String, dynamic>? normalizedScene = sceneMap == null
         ? null
         : _normalizeSceneMap(sceneMap, parser);
@@ -175,7 +166,6 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
       _statusMessage = '已加载历史记录';
       _questionMarkdown = history.ocrContent;
       _solutionMarkdown = history.solutionMarkdown;
-      _formulaPreview = cleanedLatex.isEmpty ? null : cleanedLatex;
       _geometryScene = validatedScene;
       _geometryMessage =
           geometryMessage ?? (_geometryScene == null ? '历史记录中无可视化数据。' : null);
@@ -231,43 +221,12 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
         sourceImage: widget.image,
         ocrContent: _questionMarkdown,
         solutionMarkdown: _solutionMarkdown,
-        latexResult: _cleanLatex(_formulaPreview ?? _solutionMarkdown),
+        latexResult: _solutionMarkdown,
         sceneMap: _geometryScene,
       );
     } catch (e) {
       debugPrint('save history failed: $e');
     }
-  }
-
-  String _cleanLatex(String input) {
-    String text = input.trim();
-    if (text.isEmpty) {
-      return text;
-    }
-
-    text = text.replaceAllMapped(
-      RegExp(r'\\\\(begin|end)\{'),
-      (Match match) => '\\${match.group(1)}{',
-    );
-
-    text = text
-        .replaceAll(r'\begin{cases}', r'\begin{aligned}')
-        .replaceAll(r'\end{cases}', r'\end{aligned}');
-
-    final List<String> rows = text.split(r'\\');
-    if (rows.length > 1) {
-      final List<String> normalizedRows = rows.map((String row) {
-        final String cleaned = row.trim();
-        if (cleaned.isEmpty || cleaned.contains('&')) {
-          return cleaned;
-        }
-        return '& $cleaned';
-      }).toList();
-      text = normalizedRows.join(r'\\');
-    }
-
-    text = text.replaceFirst(RegExp(r'[，。；：、,.!?！？]+$'), '');
-    return text;
   }
 
   String _messageForStage(PipelineStage stage) {
@@ -285,44 +244,6 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
       case PipelineStage.failed:
         return '流程失败';
     }
-  }
-
-  String _extractFormulaPreview(String input) {
-    final RegExp displayMath = RegExp(r'\$\$([\s\S]*?)\$\$');
-    final RegExp inlineMath = RegExp(r'\$([^\$\n]+)\$');
-
-    final RegExpMatch? displayMatch = displayMath.firstMatch(input);
-    if (displayMatch != null) {
-      return (displayMatch.group(1) ?? '').trim();
-    }
-
-    final RegExpMatch? inlineMatch = inlineMath.firstMatch(input);
-    if (inlineMatch != null) {
-      return (inlineMatch.group(1) ?? '').trim();
-    }
-
-    final List<String> lines = input
-        .split('\n')
-        .map((String line) => line.trim())
-        .where((String line) => line.isNotEmpty)
-        .toList();
-
-    for (final String line in lines) {
-      if (_looksLikeFormula(line)) {
-        return line;
-      }
-    }
-
-    return '';
-  }
-
-  bool _looksLikeFormula(String text) {
-    return text.contains(r'\') ||
-        text.contains('_') ||
-        text.contains('^') ||
-        text.contains('{') ||
-        text.contains('}') ||
-        text.contains('=');
   }
 
   Future<void> _exportPdf() async {
@@ -387,29 +308,6 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
                     : '（解题阶段未返回内容）',
                 style: pw.TextStyle(fontSize: 12, font: font),
               ),
-              if (_formulaPreview != null &&
-                  _formulaPreview!.isNotEmpty) ...<pw.Widget>[
-                pw.SizedBox(height: 20),
-                pw.Header(
-                  level: 1,
-                  child: pw.Text(
-                    '公式预览',
-                    style: pw.TextStyle(
-                      fontSize: 18,
-                      fontWeight: pw.FontWeight.bold,
-                      font: font,
-                    ),
-                  ),
-                ),
-                pw.SizedBox(height: 8),
-                pw.Container(
-                  padding: const pw.EdgeInsets.all(12),
-                  child: pw.Text(
-                    _cleanLatexForPdf(_formulaPreview!),
-                    style: pw.TextStyle(fontSize: 14, font: font),
-                  ),
-                ),
-              ],
             ];
           },
         ),
@@ -540,6 +438,25 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
         .replaceAll(r'\\exists', '∃')
         .replaceAll(r'\\partial', '∂')
         .replaceAll(r'\\nabla', '∇')
+        // 三角函数
+        .replaceAll(r'\\sin', 'sin')
+        .replaceAll(r'\\cos', 'cos')
+        .replaceAll(r'\\tan', 'tan')
+        .replaceAll(r'\\cot', 'cot')
+        .replaceAll(r'\\sec', 'sec')
+        .replaceAll(r'\\csc', 'csc')
+        .replaceAll(r'\\arcsin', 'arcsin')
+        .replaceAll(r'\\arccos', 'arccos')
+        .replaceAll(r'\\arctan', 'arctan')
+        // 对数函数
+        .replaceAll(r'\\log', 'log')
+        .replaceAll(r'\\ln', 'ln')
+        .replaceAll(r'\\lg', 'lg')
+        // 其他数学函数
+        .replaceAll(r'\\lim', 'lim')
+        .replaceAll(r'\\sum', '∑')
+        .replaceAll(r'\\prod', '∏')
+        .replaceAll(r'\\int', '∫')
         .replaceAll(r'\\begin\{cases\}', '')
         .replaceAll(r'\\end\{cases\}', '')
         .replaceAll(r'\\begin\{aligned\}', '')
@@ -609,20 +526,6 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
       's': 'ₛ', 't': 'ₜ', 'u': 'ᵤ', 'v': 'ᵥ',
     };
     return s.split('').map((c) => subMap[c] ?? c).join('');
-  }
-
-  void _copyFormula() {
-    final String? formula = _formulaPreview;
-    if (formula == null || formula.isEmpty) {
-      return;
-    }
-
-    Clipboard.setData(ClipboardData(text: formula));
-    if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('✅ 公式已复制')));
-    }
   }
 
   Widget _buildMarkdownBlock({
@@ -735,7 +638,7 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
 
       final String latex = match.group(1)?.trim() ?? '';
       if (latex.isNotEmpty) {
-        widgets.add(_buildMathWidget(latex, fontSize: 16));
+        widgets.add(_buildMathWidget(latex, fontSize: 13));
       }
 
       lastEnd = match.end;
@@ -755,17 +658,25 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
     return widgets;
   }
 
-  Widget _buildMathWidget(String latex, {double fontSize = 15}) {
+  Widget _buildMathWidget(String latex, {double fontSize = 14}) {
     // flutter_math_fork 遇到无效 LaTeX 会渲染黄色错误框而不是抛异常，
     // 所以先做语法检查，无效时直接显示原文
-    if (!_isValidLatex(latex)) {
-      return Text(latex, style: TextStyle(fontSize: fontSize, fontFamily: 'monospace'));
+    Widget buildMath() {
+      if (!_isValidLatex(latex)) {
+        return Text(latex, style: TextStyle(fontSize: fontSize, fontFamily: 'monospace'));
+      }
+      try {
+        return Math.tex(latex, textStyle: TextStyle(fontSize: fontSize));
+      } catch (e) {
+        return Text(latex, style: TextStyle(fontSize: fontSize, fontFamily: 'monospace'));
+      }
     }
-    try {
-      return Math.tex(latex, textStyle: TextStyle(fontSize: fontSize));
-    } catch (e) {
-      return Text(latex, style: TextStyle(fontSize: fontSize, fontFamily: 'monospace'));
-    }
+
+    // 长公式包裹在水平滚动容器中，防止溢出
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: buildMath(),
+    );
   }
 
   bool _isValidLatex(String latex) {
@@ -822,7 +733,7 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
 
       final String latex = match.group(1)?.trim() ?? '';
       if (latex.isNotEmpty) {
-        widgets.add(_buildMathWidget(latex, fontSize: 15));
+        widgets.add(_buildMathWidget(latex, fontSize: 13));
       }
 
       lastEnd = match.end;
@@ -943,34 +854,6 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
                           emptyText: '解题阶段未返回内容',
                         ),
                         const SizedBox(height: 20),
-                        if (_formulaPreview != null) ...<Widget>[
-                          const Text(
-                            '公式预览（点击复制）',
-                            style: TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 8),
-                          GestureDetector(
-                            onTap: _copyFormula,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 10,
-                                horizontal: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.blue[50],
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: Math.tex(
-                                  _formulaPreview!,
-                                  textStyle: const TextStyle(fontSize: 22),
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 20),
-                        ],
                         if (_geometryScene != null)
                           SizedBox(
                             width: double.infinity,
