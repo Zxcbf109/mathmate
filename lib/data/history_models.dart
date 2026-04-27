@@ -28,19 +28,25 @@ class GeometrySceneEmbedded {
     final GeometrySceneEmbedded scene = GeometrySceneEmbedded();
     scene.viewport = ViewportEmbedded.fromMap(
       parser.safeMap(
-        parser.readValueCaseInsensitive(map, <String>['viewport']) ??
+        parser.readValueCaseInsensitive(
+              map,
+              <String>['viewport'],
+            ) ??
             <String, dynamic>{},
       ),
       parser,
     );
 
     final List<dynamic> rawElements = parser.safeList(
-      parser.readValueCaseInsensitive(map, <String>['elements']) ?? <dynamic>[],
+      parser.readValueCaseInsensitive(map, <String>['elements']) ??
+          <dynamic>[],
     );
     scene.elements = rawElements
         .map(
-          (dynamic item) =>
-              GeometryElementEmbedded.fromMap(parser.safeMap(item), parser),
+          (dynamic item) => GeometryElementEmbedded.fromMap(
+            parser.safeMap(item),
+            parser,
+          ),
         )
         .toList();
 
@@ -49,17 +55,14 @@ class GeometrySceneEmbedded {
 
   Map<String, dynamic> toMap() {
     return <String, dynamic>{
-      'viewport':
-          viewport?.toMap() ??
+      'viewport': viewport?.toMap() ??
           <String, dynamic>{
             'xMin': -5.0,
             'xMax': 5.0,
             'yMin': -5.0,
             'yMax': 5.0,
           },
-      'elements': elements
-          .map((GeometryElementEmbedded e) => e.toMap())
-          .toList(),
+      'elements': elements.map((GeometryElementEmbedded e) => e.toMap()).toList(),
     };
   }
 }
@@ -161,9 +164,8 @@ class GeometryElementEmbedded {
       parser.readValueCaseInsensitive(map, <String>['style']),
     );
 
-    final dynamic visibleRaw = parser.readValueCaseInsensitive(map, <String>[
-      'visible',
-    ]);
+    final dynamic visibleRaw =
+        parser.readValueCaseInsensitive(map, <String>['visible']);
     element.visible = visibleRaw is bool ? visibleRaw : true;
 
     element.initialT = parser.safeToDouble(

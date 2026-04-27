@@ -9,7 +9,11 @@ class JxgWebView extends StatefulWidget {
   final Map<String, dynamic> scene;
   final void Function(String message)? onEngineError;
 
-  const JxgWebView({super.key, required this.scene, this.onEngineError});
+  const JxgWebView({
+    super.key,
+    required this.scene,
+    this.onEngineError,
+  });
 
   @override
   State<JxgWebView> createState() => _JxgWebViewState();
@@ -72,7 +76,10 @@ class _JxgWebViewState extends State<JxgWebView> {
     return Stack(
       children: [
         WebViewWidget(controller: _controller),
-        if (_loading) const Center(child: CircularProgressIndicator()),
+        if (_loading)
+          const Center(
+            child: CircularProgressIndicator(),
+          ),
       ],
     );
   }

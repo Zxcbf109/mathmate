@@ -19,8 +19,10 @@ class VivoChatMessage {
 class VivoAiChatService {
   static const String _apiKeyEnv = 'VIVO_API_KEY';
   static const String _modelEnv = 'VIVO_MODEL_ID';
-  static const String _baseUrl =
-      'https://api-ai.vivo.com.cn/v1/chat/completions';
+  static const String _baseUrlEnv = 'VIVO_BASE_URL';
+  static const String _defaultModel = 'qwen-plus';
+  static const String _defaultBaseUrl =
+      'https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions';
 
   static bool _dotenvLoaded = false;
 
@@ -34,8 +36,9 @@ class VivoAiChatService {
     await _ensureEnvLoaded();
 
     final String apiKey = (dotenv.env[_apiKeyEnv] ?? '').trim();
-    final String modelId = (dotenv.env[_modelEnv] ?? 'Volc-DeepSeek-V3.2')
-        .trim();
+    final String modelId = (dotenv.env[_modelEnv] ?? _defaultModel).trim();
+    final String baseUrl =
+        (dotenv.env[_baseUrlEnv] ?? _defaultBaseUrl).trim();
 
     if (apiKey.isEmpty) {
       throw Exception('Missing env config: VIVO_API_KEY');
@@ -58,7 +61,7 @@ class VivoAiChatService {
     };
 
     final http.Response response = await http.post(
-      Uri.parse(_baseUrl),
+      Uri.parse(baseUrl),
       headers: headers,
       body: jsonEncode(body),
     );

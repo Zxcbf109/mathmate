@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(cp -r \"D:/projects/new/mathmate/android/app/src/main/res/drawable-hdpi\" \"D:/projects/MathMate/android/app/src/main/res/\")",
+      "Bash(cp -r \"D:/projects/new/mathmate/android/app/src/main/res/drawable-mdpi\" \"D:/projects/MathMate/android/app/src/main/res/\")",
+      "Bash(cp -r \"D:/projects/new/mathmate/android/app/src/main/res/drawable-xhdpi\" \"D:/projects/MathMate/android/app/src/main/res/\")",
+      "Bash(cp -r \"D:/projects/new/mathmate/android/app/src/main/res/drawable-xxhdpi\" \"D:/projects/MathMate/android/app/src/main/res/\")",
+      "Bash(cp -r \"D:/projects/new/mathmate/android/app/src/main/res/drawable-xxxhdpi\" \"D:/projects/MathMate/android/app/src/main/res/\")"
+    ]
+  }
+}

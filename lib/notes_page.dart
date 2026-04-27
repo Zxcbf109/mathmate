@@ -5,18 +5,18 @@ import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'note_editor_page.dart';
 import 'note_model.dart';
 
-class NotesHomePage extends StatefulWidget {
-  const NotesHomePage({super.key});
+class NotesPage extends StatefulWidget {
+  const NotesPage({super.key});
 
   @override
-  State<NotesHomePage> createState() => _NotesHomePageState();
+  State<NotesPage> createState() => _NotesPageState();
 }
 
-class _NotesHomePageState extends State<NotesHomePage> {
+class _NotesPageState extends State<NotesPage> {
   List<Note> allNotes = [];
   List<Note> filteredNotes = [];
   final TextEditingController _searchController = TextEditingController();
-  String? _selectedCategory;
+  String? _selectedCategory; // 使用 String 筛选
   bool _onlyShowFavorite = false;
 
   @override
@@ -183,16 +183,12 @@ class _NotesHomePageState extends State<NotesHomePage> {
             ),
           ),
           ...categoriesToShow.map((category) {
+            final bool selected = _selectedCategory == category;
             return ListTile(
               title: Text(category),
-              leading: Radio<String>(
-                value: category,
-                groupValue: _selectedCategory,
-                onChanged: (value) {
-                  setState(() => _selectedCategory = value);
-                  _filterNotes();
-                  Navigator.pop(context);
-                },
+              leading: Icon(
+                selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                color: selected ? Theme.of(context).primaryColor : Colors.grey,
               ),
               onTap: () {
                 setState(() => _selectedCategory = category);
@@ -204,17 +200,12 @@ class _NotesHomePageState extends State<NotesHomePage> {
           const Divider(),
           ListTile(
             title: const Text(
-              "全部分类 (取消筛选)",
+              '全部分类 (取消筛选)',
               style: TextStyle(color: Colors.blue),
             ),
-            leading: Radio<String?>(
-              value: null,
-              groupValue: _selectedCategory,
-              onChanged: (value) {
-                setState(() => _selectedCategory = null);
-                _filterNotes();
-                Navigator.pop(context);
-              },
+            leading: Icon(
+              _selectedCategory == null ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+              color: _selectedCategory == null ? Colors.blue : Colors.grey,
             ),
             onTap: () {
               setState(() => _selectedCategory = null);
@@ -322,7 +313,7 @@ class _NotesHomePageState extends State<NotesHomePage> {
                           fontSize: 10,
                           color: Colors.grey,
                         ),
-                      ),
+),
                     ],
                   ),
                   trailing: Row(

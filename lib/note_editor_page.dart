@@ -22,7 +22,7 @@ class NoteEditorPage extends StatefulWidget {
 
 class _NoteEditorPageState extends State<NoteEditorPage> {
   late final TextEditingController _titleController;
-  late final TextEditingController _tagController;
+  TextEditingController? _tagController;
   late String _selectedCategory;
   List<String> _imagePaths = [];
   List<String> _tags = [];
@@ -290,15 +290,17 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   ...predefined.map(
-                    (cat) => ListTile(
-                      title: Text(cat),
-                      leading: Radio<String>(
-                        value: cat,
-                        groupValue: tempCategory,
-                        onChanged: (v) => setState(() => tempCategory = v!),
-                      ),
-                      onTap: () => setState(() => tempCategory = cat),
-                    ),
+                    (cat) {
+                      final bool selected = tempCategory == cat;
+                      return ListTile(
+                        title: Text(cat),
+                        leading: Icon(
+                          selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+                          color: selected ? Theme.of(context).primaryColor : Colors.grey,
+                        ),
+                        onTap: () => setState(() => tempCategory = cat),
+                      );
+                    },
                   ),
                   if (tempCategory == '其他')
                     Padding(
@@ -351,31 +353,38 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
   }
 
   void _addTag() {
+    _tagController = TextEditingController();
     showDialog(
       context: context,
-      builder: (context) {
-        _tagController = TextEditingController();
+      builder: (dialogContext) {
         return AlertDialog(
           title: const Text("添加标签"),
-          content: TextField(controller: _tagController, maxLength: 10),
+          content: TextField(
+            controller: _tagController,
+            maxLength: 10,
+            autofocus: true,
+          ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(context),
+              onPressed: () => Navigator.pop(dialogContext),
               child: const Text("取消"),
             ),
             TextButton(
               onPressed: () {
-                final tag = _tagController.text.trim();
+                final tag = _tagController!.text.trim();
                 if (tag.isNotEmpty && !_tags.contains(tag))
                   setState(() => _tags.add(tag));
-                Navigator.pop(context);
+                Navigator.pop(dialogContext);
               },
               child: const Text("添加"),
             ),
           ],
         );
       },
-    );
+    ).then((_) {
+      _tagController?.dispose();
+      _tagController = null;
+    });
   }
 
   void _removeTag(String tag) => setState(() => _tags.remove(tag));
@@ -428,7 +437,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      onPopInvoked: (didPop) {
+      onPopInvokedWithResult: (didPop, result) {
         if (didPop) return;
         _saveAndExit();
       },
@@ -451,7 +460,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
             IconButton(
               onPressed: () => ScaffoldMessenger.of(
                 context,
-              ).showSnackBar(const SnackBar(content: Text('个性化信纸/背景功能开发中'))),
+).showSnackBar(const SnackBar(content: Text('个性化信纸/背景功能开发中'))),
               icon: const Icon(Icons.checkroom, color: Colors.black87),
             ),
             PopupMenuButton<String>(
@@ -691,10 +700,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                         IconButton(
                           icon: const Icon(Icons.keyboard_hide),
                           onPressed: () {
-                            FocusManager.instance.primaryFocus?.unfocus();
-                            SystemChannels.textInput.invokeMethod(
-                              'TextInput.hide',
-                            );
+                            FocusScope.of(context).unfocus();
                             setState(() => _activeToolbarIndex = 0);
                           },
                         ),

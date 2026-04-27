@@ -1,18 +1,16 @@
 import 'dart:convert';
 
 import 'package:mathmate/models/pipeline_models.dart';
+import 'package:mathmate/services/deepseek_service.dart';
 import 'package:mathmate/services/prompts/visualization_prompt.dart';
-import 'package:mathmate/services/volc_ai_client_service.dart';
 import 'package:mathmate/visualization/geometry_validator.dart';
 import 'package:mathmate/visualization/response_extractor.dart';
 
 class VisualizationService {
-  static const String _visualizationModelEnv = 'VOLC_VIS_MODEL_ID';
+  final DeepSeekService _client;
 
-  final VolcAiClientService _client;
-
-  VisualizationService({VolcAiClientService? client})
-    : _client = client ?? VolcAiClientService();
+  VisualizationService({DeepSeekService? client})
+    : _client = client ?? DeepSeekService();
 
   Future<VisualizeResult> buildGeometryScene({
     required String questionMarkdown,
@@ -24,7 +22,6 @@ class VisualizationService {
     final String raw = await _client.callTextPrompt(
       prompt: visualizationPrompt,
       userText: userText,
-      modelEnv: _visualizationModelEnv,
     );
 
     final String? geometryText = ResponseExtractor.extractGeometryJsonText(raw);
@@ -46,8 +43,8 @@ class VisualizationService {
         );
       }
 
-      final GeometryValidationResult validation = const GeometryValidator()
-          .validate(decoded);
+      final GeometryValidationResult validation =
+          const GeometryValidator().validate(decoded);
       if (!validation.isValid || validation.scene == null) {
         return VisualizeResult(
           scene: null,
@@ -56,7 +53,10 @@ class VisualizationService {
         );
       }
 
-      return VisualizeResult(scene: validation.scene!.toJson(), rawOutput: raw);
+      return VisualizeResult(
+        scene: validation.scene!.toJson(),
+        rawOutput: raw,
+      );
     } catch (e) {
       return VisualizeResult(
         scene: null,

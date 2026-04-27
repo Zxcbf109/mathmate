@@ -35,7 +35,6 @@ class LocalGeogebraServer {
   Future<String> start() async {
     if (_started) return url;
 
-    // 防止并发启动
     if (_copyCompleter != null) {
       await _copyCompleter!.future;
       return url;
@@ -59,29 +58,23 @@ class LocalGeogebraServer {
     final geogebraDir = Directory('${tempDir.path}/geogebra_assets');
     _serveDir = geogebraDir.path;
 
-    // 检查是否已经复制过（通过 index.html 存在判断）
     final indexFile = File('${geogebraDir.path}/index.html');
     if (await indexFile.exists()) {
       return;
     }
 
-    // 确保目录存在
     await geogebraDir.create(recursive: true);
 
-    // 复制所有资源文件
     for (final assetPath in _assetFiles) {
       try {
         final data = await rootBundle.load(assetPath);
         final relativePath = assetPath.replaceFirst('assets/geogebra/', '');
         final targetFile = File('${geogebraDir.path}/$relativePath');
 
-        // 创建子目录
         await targetFile.parent.create(recursive: true);
-
         await targetFile.writeAsBytes(data.buffer.asUint8List());
       } catch (e) {
-        // 文件不存在时跳过（非关键资源）
-        debugPrint('跳过资源复制: $assetPath ($e)');
+        // 文件不存在时跳过
       }
     }
   }
@@ -97,17 +90,16 @@ class LocalGeogebraServer {
 
   Future<void> _handleRequest(HttpRequest request) async {
     String path = request.uri.path;
+    final String? appNameQuery = request.uri.queryParameters['appName'];
 
-    // 默认页
     if (path == '/' || path.isEmpty) {
       path = '/index.html';
     }
 
-    // 安全检查：防止路径遍历
     final sanitized = path.replaceAll('\\', '/');
     if (sanitized.contains('..')) {
       request.response.statusCode = 403;
-      request.response.close();
+      await request.response.close();
       return;
     }
 
@@ -116,7 +108,15 @@ class LocalGeogebraServer {
 
     if (await file.exists()) {
       try {
-        final content = await file.readAsBytes();
+        List<int> content = await file.readAsBytes();
+
+        // 动态替换 index.html 中的 appName
+        if (sanitized.endsWith('index.html') && appNameQuery != null) {
+          String html = String.fromCharCodes(content);
+          html = html.replaceFirst('"appName": "graphing"', '"appName": "$appNameQuery"');
+          content = html.codeUnits;
+        }
+
         request.response.headers.contentType = _contentType(path);
         request.response.headers.add('Access-Control-Allow-Origin', '*');
         request.response.headers.add('Cache-Control', 'max-age=3600');
@@ -140,11 +140,7 @@ class LocalGeogebraServer {
     return ContentType('application', 'octet-stream');
   }
 
-  void debugPrint(String message) {
-    // ignore
-  }
-
-  /// 停止服务器（可选）
+  /// 停止服务器
   void stop() {
     _server?.close();
     _server = null;

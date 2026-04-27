@@ -159,11 +159,6 @@ class _ProfilePageState extends State<ProfilePage> {
             height: 92,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: const LinearGradient(
-                colors: <Color>[Color(0xFF556EEA), Color(0xFF3F51B5)],
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-              ),
               boxShadow: <BoxShadow>[
                 BoxShadow(
                   color: _profilePrimaryColor.withValues(alpha: 0.28),
@@ -172,14 +167,12 @@ class _ProfilePageState extends State<ProfilePage> {
                 ),
               ],
             ),
-            child: const Center(
-              child: Text(
-                'M+',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 30,
-                  fontWeight: FontWeight.w800,
-                ),
+            child: const ClipOval(
+              child: Image(
+                image: AssetImage('assets/app_icon_final.png'),
+                width: 92,
+                height: 92,
+                fit: BoxFit.cover,
               ),
             ),
           ),

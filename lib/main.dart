@@ -2,20 +2,23 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'package:mathmate/beautiful_result_page.dart';
 import 'package:mathmate/pages/chat_home_page.dart';
+import 'package:mathmate/notes_page.dart';
 import 'package:mathmate/geogebra_page.dart';
-import 'package:mathmate/pages/calculator_page.dart';
 import 'package:mathmate/data/conversation_repository.dart';
 import 'package:mathmate/data/history_repository.dart';
 import 'package:mathmate/data/video_recommendations.dart';
 import 'package:mathmate/grade_selection_page.dart';
 import 'package:mathmate/history_list_page.dart';
-import 'package:mathmate/notes_page.dart';
+import 'package:mathmate/pages/calculator_page.dart';
 import 'package:mathmate/pages/video_player_page.dart';
 import 'package:mathmate/profile_page.dart';
 import 'package:mathmate/services/scanner_service.dart';
 import 'package:mathmate/services/video_recommendation_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,6 +38,16 @@ class MathMateApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
+      localizationsDelegates: const [
+        GlobalMaterialLocalizations.delegate,
+        GlobalWidgetsLocalizations.delegate,
+        GlobalCupertinoLocalizations.delegate,
+        quill.FlutterQuillLocalizations.delegate,
+      ],
+      supportedLocales: const [
+        Locale('zh', 'CN'),
+        Locale('en', 'US'),
+      ],
       theme: ThemeData(
         useMaterial3: true,
         colorSchemeSeed: const Color(0xFF3F51B5),
@@ -58,7 +71,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void initState() {
     super.initState();
-    _pages = const <Widget>[QuestionHomePage(), NotesHomePage(), ProfilePage()];
+    _pages = const <Widget>[QuestionHomePage(), NotesPage(), ProfilePage()];
   }
 
   @override
@@ -108,7 +121,6 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
   final TextEditingController _searchController = TextEditingController();
 
   bool _isScanning = false;
-  String _scanStatus = '拍照难题';
   bool _isRefreshing = false;
   List<VideoInfo> _recommendedVideos = <VideoInfo>[];
 
@@ -126,13 +138,19 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
 
   void _openSearchChat() {
     final String query = _searchController.text.trim();
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => ChatHomePage(
-          initialQuery: query.isNotEmpty ? query : null,
+    if (query.isNotEmpty) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => const ChatHomePage(),
         ),
-      ),
-    );
+      );
+    } else {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => const ChatHomePage(),
+        ),
+      );
+    }
   }
 
   Future<void> _loadGradeLevelAndVideos() async {
@@ -152,9 +170,7 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
     });
 
     try {
-      // 模拟网络请求延迟，确保有足够的时间显示刷新动画
       await Future<void>.delayed(const Duration(milliseconds: 500));
-      
       final List<String> keywords = await _recommendationService
           .extractKeywords('函数 椭圆 几何');
       if (keywords.isNotEmpty) {
@@ -164,7 +180,6 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
             _recommendedVideos = matched;
           });
         } else {
-          // 没有匹配的视频
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
@@ -175,7 +190,6 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
           }
         }
       } else {
-        // 关键词提取失败
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
@@ -186,7 +200,6 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
         }
       }
     } catch (e) {
-      // 网络请求失败
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -215,7 +228,6 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
 
     setState(() {
       _isScanning = true;
-      _scanStatus = '正在扫描中...';
     });
 
     final File? scannedFile = await _scannerService.startScanning(context);
@@ -227,14 +239,12 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
     if (scannedFile == null) {
       setState(() {
         _isScanning = false;
-        _scanStatus = '扫描已取消，点击重试';
       });
       return;
     }
 
     setState(() {
       _isScanning = false;
-      _scanStatus = '拍照难题';
     });
 
     await Navigator.of(context).push(
@@ -324,11 +334,9 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
           ),
           IconButton(
             onPressed: () {
-              Navigator.of(
-                context,
-              ).push(MaterialPageRoute(
-                      builder: (_) => const ChatHomePage(),
-                    ));
+              Navigator.of(context).push(
+                MaterialPageRoute(builder: (_) => const ChatHomePage()),
+              );
             },
             icon: const Icon(Icons.chat_bubble_outline_rounded),
           ),
@@ -339,14 +347,6 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
               );
             },
             icon: const Icon(Icons.history_rounded),
-          ),
-          IconButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const NotesHomePage()),
-              );
-            },
-            icon: const Icon(Icons.notes_rounded),
           ),
         ],
       ),
@@ -370,8 +370,17 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
       ),
       child: Column(
         children: <Widget>[
+          const Text(
+            '拍一下，难题秒解决',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF3F51B5),
+            ),
+          ),
+          const SizedBox(height: 16),
           SizedBox(
-            height: 210,
+            height: 180,
             child: Stack(
               alignment: Alignment.center,
               children: <Widget>[
@@ -405,23 +414,10 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
                     child: Center(
                       child: _isScanning
                           ? const CircularProgressIndicator(color: Colors.white)
-                          : Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: const <Widget>[
-                                Icon(
-                                  Icons.camera_alt_rounded,
-                                  color: Colors.white,
-                                  size: 42,
-                                ),
-                                SizedBox(height: 6),
-                                Text(
-                                  '拍照难题',
-                                  style: TextStyle(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                              ],
+                          : const Icon(
+                              Icons.camera_alt_rounded,
+                              color: Colors.white,
+                              size: 48,
                             ),
                     ),
                   ),
@@ -429,8 +425,6 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
               ],
             ),
           ),
-          const SizedBox(height: 4),
-          Text(_scanStatus, style: TextStyle(color: Colors.blueGrey.shade600)),
         ],
       ),
     );
@@ -491,7 +485,9 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
                   'name': '几何画板',
                   'onTap': () {
                     Navigator.of(context).push(
-                      MaterialPageRoute(builder: (_) => const GeogebraPage()),
+                      MaterialPageRoute(
+                        builder: (_) => const GeogebraPage(appName: 'classic'),
+                      ),
                     );
                   },
                 },
@@ -501,8 +497,10 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
                   'onTap': () {
                     Navigator.of(context).push(
                       MaterialPageRoute(
-                        builder: (_) =>
-                            const GeogebraPage(initialExpression: 'f(x) = x^2'),
+                        builder: (_) => const GeogebraPage(
+                          appName: 'graphing',
+                          initialExpression: 'f(x) = x^2',
+                        ),
                       ),
                     );
                   },
@@ -534,6 +532,63 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
                 ),
               );
             },
+          ),
+          const SizedBox(height: 14),
+          GestureDetector(
+            onTap: () async {
+              final Uri uri = Uri.parse('https://www.geogebra.org/materials');
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            },
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE8EAED)),
+              ),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE8EEFF),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(
+                      Icons.people_outline,
+                      size: 20,
+                      color: Color(0xFF3F51B5),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          'GeoGebra 社区',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF1A1A1A),
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          '探索海量数学资源与互动课件',
+                          style: TextStyle(fontSize: 12, color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const Icon(Icons.chevron_right, color: Colors.grey),
+                ],
+              ),
+            ),
           ),
         ],
       ),

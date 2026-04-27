@@ -74,9 +74,8 @@ class VolcAiClientService {
     final String modelId =
         (dotenv.env[modelEnv] ?? dotenv.env[_defaultModelEnv] ?? '').trim();
     final String baseUrl = (dotenv.env[_baseUrlEnv] ?? _defaultBaseUrl).trim();
-    final String requestFormat = (dotenv.env[_requestFormatEnv] ?? 'auto')
-        .trim()
-        .toLowerCase();
+    final String requestFormat =
+        (dotenv.env[_requestFormatEnv] ?? 'auto').trim().toLowerCase();
 
     if (apiKey.isEmpty) {
       throw Exception('Missing env config: VOLC_API_KEY');
@@ -154,9 +153,7 @@ class VolcAiClientService {
     );
   }
 
-  List<Map<String, dynamic>> _toInputFormat(
-    List<Map<String, dynamic>> messages,
-  ) {
+  List<Map<String, dynamic>> _toInputFormat(List<Map<String, dynamic>> messages) {
     return messages.map((Map<String, dynamic> message) {
       final String role = (message['role'] ?? 'user').toString();
       final dynamic content = message['content'];
@@ -171,8 +168,7 @@ class VolcAiClientService {
       }
 
       if (content is List) {
-        final List<Map<String, dynamic>> mappedContent =
-            <Map<String, dynamic>>[];
+        final List<Map<String, dynamic>> mappedContent = <Map<String, dynamic>>[];
         for (final dynamic item in content) {
           if (item is! Map) {
             continue;

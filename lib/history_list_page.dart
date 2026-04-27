@@ -23,13 +23,8 @@ class _HistoryListPageState extends State<HistoryListPage> {
     });
 
     try {
-      // 模拟网络请求延迟，确保有足够的时间显示刷新动画
       await Future<void>.delayed(const Duration(milliseconds: 800));
-      
-      // 重新加载历史记录（通过 StreamBuilder 自动监听）
-      // 这里可以添加额外的刷新逻辑，比如清理缓存等
     } catch (e) {
-      // 网络请求失败
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -64,50 +59,50 @@ class _HistoryListPageState extends State<HistoryListPage> {
         child: StreamBuilder<List<MathHistory>>(
           stream: HistoryRepository.instance.watchHistories(),
           builder: (BuildContext context, AsyncSnapshot<List<MathHistory>> snapshot) {
-                if (snapshot.connectionState == ConnectionState.waiting) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-                final List<MathHistory> histories = snapshot.data ?? <MathHistory>[];
-                if (histories.isEmpty) {
-                  return SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(),
-                    child: SizedBox(
-                      height: MediaQuery.of(context).size.height - 100,
-                      child: const Center(
-                        child: Text(
-                          '还没有历史记录',
-                          style: TextStyle(fontSize: 16, color: Colors.blueGrey),
+            final List<MathHistory> histories = snapshot.data ?? <MathHistory>[];
+            if (histories.isEmpty) {
+              return SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                child: SizedBox(
+                  height: MediaQuery.of(context).size.height - 100,
+                  child: const Center(
+                    child: Text(
+                      '还没有历史记录',
+                      style: TextStyle(fontSize: 16, color: Colors.blueGrey),
+                    ),
+                  ),
+                ),
+              );
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(14),
+              itemCount: histories.length,
+              itemBuilder: (BuildContext context, int index) {
+                final MathHistory item = histories[index];
+                final String heroTag = 'history-image-${item.id}';
+                return _HistoryCard(
+                  item: item,
+                  heroTag: heroTag,
+                  onTap: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => BeautifulResultPage(
+                          image: File(item.originalImagePath),
+                          history: item,
+                          heroTag: heroTag,
                         ),
                       ),
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(14),
-                  itemCount: histories.length,
-                  itemBuilder: (BuildContext context, int index) {
-                    final MathHistory item = histories[index];
-                    final String heroTag = 'history-image-${item.id}';
-                    return _HistoryCard(
-                      item: item,
-                      heroTag: heroTag,
-                      onTap: () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => BeautifulResultPage(
-                              image: File(item.originalImagePath),
-                              history: item,
-                              heroTag: heroTag,
-                            ),
-                          ),
-                        );
-                      },
                     );
                   },
                 );
               },
+            );
+          },
         ),
       ),
     );
