@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'dart:io';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'note_model.dart';
+import 'handwriting_page.dart';
 import 'history_list_page.dart';
 
 import 'package:share_plus/share_plus.dart';
@@ -155,9 +156,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                       RenderRepaintBoundary boundary =
                           _printKey.currentContext!.findRenderObject()
                               as RenderRepaintBoundary;
-                      ui.Image image = await boundary.toImage(
-                        pixelRatio: 3.0,
-                      );
+                      ui.Image image = await boundary.toImage(pixelRatio: 3.0);
                       ByteData? byteData = await image.toByteData(
                         format: ui.ImageByteFormat.png,
                       );
@@ -460,7 +459,7 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
             IconButton(
               onPressed: () => ScaffoldMessenger.of(
                 context,
-).showSnackBar(const SnackBar(content: Text('个性化信纸/背景功能开发中'))),
+              ).showSnackBar(const SnackBar(content: Text('个性化信纸/背景功能开发中'))),
               icon: const Icon(Icons.checkroom, color: Colors.black87),
             ),
             PopupMenuButton<String>(
@@ -692,6 +691,34 @@ class _NoteEditorPageState extends State<NoteEditorPage> {
                         IconButton(
                           icon: const Icon(Icons.image_outlined),
                           onPressed: _pickImageFromGallery,
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.draw_outlined),
+                          tooltip: "手写涂鸦",
+                          onPressed: () async {
+                            FocusManager.instance.primaryFocus
+                                ?.unfocus();
+                            final Uint8List? pngBytes = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const HandwritingPage(),
+                              ),
+                            );
+
+                            if (pngBytes != null) {
+                              final directory = await getTemporaryDirectory();
+                              final fileName =
+                                  'handwriting_${DateTime.now().millisecondsSinceEpoch}.png';
+                              final file = await File(
+                                '${directory.path}/$fileName',
+                              ).create();
+                              await file.writeAsBytes(pngBytes);
+
+                              setState(() {
+                                _imagePaths.add(file.path);
+                              });
+                            }
+                          },
                         ),
                         IconButton(
                           icon: const Icon(Icons.sell_outlined),

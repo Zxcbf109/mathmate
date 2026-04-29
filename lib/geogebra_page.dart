@@ -1,8 +1,6 @@
 import 'dart:io' show Platform;
 
 import 'package:flutter/material.dart';
-import 'package:mathmate/services/local_geogebra_server.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 class GeogebraPage extends StatefulWidget {
@@ -18,24 +16,9 @@ class GeogebraPage extends StatefulWidget {
 }
 
 class _GeogebraPageState extends State<GeogebraPage> {
-  final LocalGeogebraServer _server = LocalGeogebraServer();
   WebViewController? _controller;
   bool _loading = true;
-  String? _error;
   bool _isDesktop = false;
-
-  String get _externalUrl {
-    switch (widget.appName) {
-      case 'classic':
-        return 'https://www.geogebra.org/classic';
-      case '3d':
-        return 'https://www.geogebra.org/3d';
-      case 'geometry':
-        return 'https://www.geogebra.org/geometry';
-      default:
-        return 'https://www.geogebra.org/graphing';
-    }
-  }
 
   String get _title {
     switch (widget.appName) {
@@ -54,54 +37,37 @@ class _GeogebraPageState extends State<GeogebraPage> {
   void initState() {
     super.initState();
     _isDesktop = Platform.isWindows || Platform.isLinux || Platform.isMacOS;
-    if (_isDesktop) {
-      _loading = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _openExternal());
-    } else {
+    if (!_isDesktop) {
       _initWebView();
     }
   }
 
-  Future<void> _openExternal() async {
-    final Uri uri = Uri.parse(_externalUrl);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    }
-  }
+  void _initWebView() {
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageFinished: (_) {
+            if (mounted) setState(() => _loading = false);
+          },
+          onWebResourceError: (WebResourceError error) {
+            if (mounted) {
+              setState(() {
+                _loading = false;
+              });
+            }
+          },
+        ),
+      )
+      ..addJavaScriptChannel(
+        'GeometryBridge',
+        onMessageReceived: (JavaScriptMessage message) {
+          // interactive geometry events
+        },
+      )
+      ..loadFlutterAsset('assets/geometry/index.html');
 
-  Future<void> _initWebView() async {
-    try {
-      final String baseUrl = await _server.start();
-      final String url = '$baseUrl?appName=${widget.appName}';
-
-      _controller = WebViewController()
-        ..setJavaScriptMode(JavaScriptMode.unrestricted)
-        ..setNavigationDelegate(
-          NavigationDelegate(
-            onPageFinished: (_) {
-              if (mounted) setState(() => _loading = false);
-            },
-            onWebResourceError: (WebResourceError error) {
-              if (mounted) {
-                setState(() {
-                  _loading = false;
-                  _error = '加载失败: ${error.description}';
-                });
-              }
-            },
-          ),
-        )
-        ..loadRequest(Uri.parse(url));
-
-      setState(() {});
-    } catch (e) {
-      if (mounted) {
-        setState(() {
-          _loading = false;
-          _error = '启动失败: $e';
-        });
-      }
-    }
+    if (mounted) setState(() {});
   }
 
   @override
@@ -124,47 +90,16 @@ class _GeogebraPageState extends State<GeogebraPage> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const Icon(Icons.launch, size: 56, color: Color(0xFF3F51B5)),
-            const SizedBox(height: 20),
+            const Icon(Icons.desktop_windows, size: 56, color: Colors.grey),
+            const SizedBox(height: 16),
             const Text(
-              '正在打开 GeoGebra...',
+              '交互式几何画板暂不支持桌面端',
               style: TextStyle(fontSize: 16, color: Color(0xFF333333)),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             const Text(
-              '如未自动打开，请点击下方按钮',
+              '请在手机或平板上使用',
               style: TextStyle(fontSize: 13, color: Colors.grey),
-            ),
-            const SizedBox(height: 24),
-            FilledButton.icon(
-              onPressed: _openExternal,
-              icon: const Icon(Icons.open_in_browser),
-              label: const Text('打开 GeoGebra'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (_error != null) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const Icon(Icons.error_outline, size: 48, color: Colors.grey),
-            const SizedBox(height: 12),
-            Text(_error!, style: const TextStyle(color: Colors.grey)),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: () {
-                setState(() {
-                  _error = null;
-                  _loading = true;
-                });
-                _initWebView();
-              },
-              icon: const Icon(Icons.refresh),
-              label: const Text('重试'),
             ),
           ],
         ),
@@ -181,7 +116,7 @@ class _GeogebraPageState extends State<GeogebraPage> {
               children: <Widget>[
                 CircularProgressIndicator(color: Color(0xFF3F51B5)),
                 SizedBox(height: 12),
-                Text('GeoGebra 加载中...', style: TextStyle(color: Colors.grey)),
+                Text('几何画板加载中...', style: TextStyle(color: Colors.grey)),
               ],
             ),
           ),

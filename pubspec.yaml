@@ -40,6 +40,7 @@ dependencies:
     sdk: flutter
   flutter_dotenv: ^5.2.1
   flutter_math_fork: ^0.7.2+1
+  math_expressions: ^2.6.0
   flutter_markdown_plus: ^1.0.7
   cached_network_image: ^3.4.1
   image: ^4.5.4
@@ -87,10 +88,9 @@ flutter:
     - assets/visualization/index.html
     - assets/visualization/jxg_engine.js
     - assets/visualization/jsxgraphcore.js
-    - assets/geogebra/index.html
-    - assets/geogebra/deployggb.js
-    - assets/geogebra/web3d/web3d.nocache.js
-    - assets/geogebra/web3d/0C7057AD68C986E5B1859BFB332A1012.cache.js
+    - assets/geometry/index.html
+    - assets/geometry/geometry_engine.js
+    - assets/geometry/jsxgraphcore.js
 
   # To add assets to your application, add an assets section, like this:
   # assets:

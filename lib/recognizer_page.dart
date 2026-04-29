@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mathmate/beautiful_result_page.dart';
+import 'package:mathmate/scanner/enhanced_crop_page.dart';
 
 class RecognizerPage extends StatefulWidget {
   const RecognizerPage({super.key});
@@ -20,14 +21,23 @@ class _RecognizerPageState extends State<RecognizerPage> {
     final XFile? selected = await _picker.pickImage(source: source);
     if (selected == null || !mounted) return;
 
+    final File? croppedFile = await Navigator.push<File>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => EnhancedCropPage(imageFile: File(selected.path)),
+      ),
+    );
+
+    if (croppedFile == null || !mounted) return;
+
     setState(() {
-      _image = selected;
+      _image = XFile(croppedFile.path);
     });
 
     await Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => BeautifulResultPage(image: File(selected.path)),
+        builder: (_) => BeautifulResultPage(image: croppedFile),
       ),
     );
   }

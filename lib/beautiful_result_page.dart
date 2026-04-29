@@ -540,6 +540,25 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
         .replaceAll(r'\\exists', '∃')
         .replaceAll(r'\\partial', '∂')
         .replaceAll(r'\\nabla', '∇')
+        // 三角函数
+        .replaceAll(r'\\sin', 'sin')
+        .replaceAll(r'\\cos', 'cos')
+        .replaceAll(r'\\tan', 'tan')
+        .replaceAll(r'\\cot', 'cot')
+        .replaceAll(r'\\sec', 'sec')
+        .replaceAll(r'\\csc', 'csc')
+        .replaceAll(r'\\arcsin', 'arcsin')
+        .replaceAll(r'\\arccos', 'arccos')
+        .replaceAll(r'\\arctan', 'arctan')
+        // 对数函数
+        .replaceAll(r'\\log', 'log')
+        .replaceAll(r'\\ln', 'ln')
+        .replaceAll(r'\\lg', 'lg')
+        // 其他
+        .replaceAll(r'\\lim', 'lim')
+        .replaceAll(r'\\sum', '∑')
+        .replaceAll(r'\\prod', '∏')
+        .replaceAll(r'\\int', '∫')
         .replaceAll(r'\\begin\{cases\}', '')
         .replaceAll(r'\\end\{cases\}', '')
         .replaceAll(r'\\begin\{aligned\}', '')
@@ -623,6 +642,40 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
         context,
       ).showSnackBar(const SnackBar(content: Text('✅ 公式已复制')));
     }
+  }
+
+  void _showFullImageViewer() {
+    if (_imageBytes == null) return;
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black,
+      builder: (BuildContext context) {
+        return Scaffold(
+          backgroundColor: Colors.black,
+          body: Stack(
+            children: <Widget>[
+              InteractiveViewer(
+                panEnabled: true,
+                boundaryMargin: const EdgeInsets.all(20),
+                minScale: 0.5,
+                maxScale: 5.0,
+                child: Center(
+                  child: Image.memory(_imageBytes!),
+                ),
+              ),
+              Positioned(
+                top: MediaQuery.of(context).padding.top + 8,
+                left: 8,
+                child: IconButton(
+                  icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                  onPressed: () => Navigator.of(context).pop(),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   Widget _buildMarkdownBlock({
@@ -758,14 +811,22 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
   Widget _buildMathWidget(String latex, {double fontSize = 15}) {
     // flutter_math_fork 遇到无效 LaTeX 会渲染黄色错误框而不是抛异常，
     // 所以先做语法检查，无效时直接显示原文
-    if (!_isValidLatex(latex)) {
-      return Text(latex, style: TextStyle(fontSize: fontSize, fontFamily: 'monospace'));
+    Widget buildMath() {
+      if (!_isValidLatex(latex)) {
+        return Text(latex, style: TextStyle(fontSize: fontSize, fontFamily: 'monospace'));
+      }
+      try {
+        return Math.tex(latex, textStyle: TextStyle(fontSize: fontSize));
+      } catch (e) {
+        return Text(latex, style: TextStyle(fontSize: fontSize, fontFamily: 'monospace'));
+      }
     }
-    try {
-      return Math.tex(latex, textStyle: TextStyle(fontSize: fontSize));
-    } catch (e) {
-      return Text(latex, style: TextStyle(fontSize: fontSize, fontFamily: 'monospace'));
-    }
+
+    // 长公式包裹在水平滚动容器中，防止溢出
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: buildMath(),
+    );
   }
 
   bool _isValidLatex(String latex) {
@@ -874,12 +935,15 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
           Positioned.fill(
             child: _imageBytes == null
                 ? const SizedBox.shrink()
-                : (widget.heroTag == null
-                      ? Image.memory(_imageBytes!, fit: BoxFit.cover)
-                      : Hero(
-                          tag: widget.heroTag!,
-                          child: Image.memory(_imageBytes!, fit: BoxFit.cover),
-                        )),
+                : GestureDetector(
+                    onTap: _showFullImageViewer,
+                    child: widget.heroTag == null
+                        ? Image.memory(_imageBytes!, fit: BoxFit.cover)
+                        : Hero(
+                            tag: widget.heroTag!,
+                            child: Image.memory(_imageBytes!, fit: BoxFit.cover),
+                          ),
+                  ),
           ),
           Container(color: Colors.black26),
           DraggableScrollableSheet(

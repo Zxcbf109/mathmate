@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
@@ -10,15 +9,15 @@ import 'package:mathmate/notes_page.dart';
 import 'package:mathmate/geogebra_page.dart';
 import 'package:mathmate/data/conversation_repository.dart';
 import 'package:mathmate/data/history_repository.dart';
-import 'package:mathmate/data/video_recommendations.dart';
+import 'package:mathmate/data/video_resources.dart';
 import 'package:mathmate/grade_selection_page.dart';
 import 'package:mathmate/history_list_page.dart';
 import 'package:mathmate/pages/calculator_page.dart';
 import 'package:mathmate/pages/video_player_page.dart';
 import 'package:mathmate/profile_page.dart';
+import 'package:mathmate/scanner/enhanced_crop_page.dart';
 import 'package:mathmate/services/scanner_service.dart';
 import 'package:mathmate/services/video_recommendation_service.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -122,7 +121,7 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
 
   bool _isScanning = false;
   bool _isRefreshing = false;
-  List<VideoInfo> _recommendedVideos = <VideoInfo>[];
+  List<VideoResource> _recommendedVideos = <VideoResource>[];
 
   @override
   void initState() {
@@ -155,9 +154,14 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
 
   Future<void> _loadGradeLevelAndVideos() async {
     final int? grade = await HistoryRepository.instance.getGradeLevel();
+    final List<VideoResource> videos = await _recommendationService.recommendVideos();
     if (mounted) {
       setState(() {
-        _recommendedVideos = getVideosByGrade(grade);
+        _recommendedVideos = videos.isNotEmpty ? videos : getVideoResourcesByGrade(
+          grade != null
+              ? (grade >= 1 && grade <= 6 ? '小学' : grade >= 7 && grade <= 9 ? '初中' : '高中')
+              : '高中',
+        );
       });
     }
   }
@@ -170,30 +174,16 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
     });
 
     try {
-      await Future<void>.delayed(const Duration(milliseconds: 500));
-      final List<String> keywords = await _recommendationService
-          .extractKeywords('函数 椭圆 几何');
-      if (keywords.isNotEmpty) {
-        final List<VideoInfo> matched = getVideosByKeywords(keywords);
-        if (matched.isNotEmpty) {
+      final List<VideoResource> videos = await _recommendationService.recommendVideos();
+      if (mounted) {
+        if (videos.isNotEmpty) {
           setState(() {
-            _recommendedVideos = matched;
+            _recommendedVideos = videos;
           });
         } else {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text('暂无相关视频推荐'),
-                duration: Duration(seconds: 2),
-              ),
-            );
-          }
-        }
-      } else {
-        if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('无法获取推荐关键词'),
+              content: Text('暂无相关视频推荐'),
               duration: Duration(seconds: 2),
             ),
           );
@@ -247,9 +237,23 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
       _isScanning = false;
     });
 
+    final File? croppedFile = await Navigator.of(context).push<File>(
+      MaterialPageRoute(
+        builder: (_) => EnhancedCropPage(imageFile: scannedFile),
+      ),
+    );
+
+    if (!mounted) {
+      return;
+    }
+
+    if (croppedFile == null) {
+      return;
+    }
+
     await Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => BeautifulResultPage(image: scannedFile),
+        builder: (_) => BeautifulResultPage(image: croppedFile),
       ),
     );
   }
@@ -536,70 +540,13 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
               );
             },
           ),
-          const SizedBox(height: 14),
-          GestureDetector(
-            onTap: () async {
-              final Uri uri = Uri.parse('https://www.geogebra.org/materials');
-              if (await canLaunchUrl(uri)) {
-                await launchUrl(uri, mode: LaunchMode.externalApplication);
-              }
-            },
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE8EAED)),
-              ),
-              child: Row(
-                children: <Widget>[
-                  Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE8EEFF),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(
-                      Icons.people_outline,
-                      size: 20,
-                      color: Color(0xFF3F51B5),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  const Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        Text(
-                          'GeoGebra 社区',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1A1A1A),
-                          ),
-                        ),
-                        SizedBox(height: 2),
-                        Text(
-                          '探索海量数学资源与互动课件',
-                          style: TextStyle(fontSize: 12, color: Colors.grey),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const Icon(Icons.chevron_right, color: Colors.grey),
-                ],
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
 
   Widget _buildVideoList() {
-    final List<VideoInfo> videos = _recommendedVideos;
+    final List<VideoResource> videos = _recommendedVideos;
 
     if (videos.isEmpty) {
       return Container(
@@ -616,7 +563,7 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
         separatorBuilder: (BuildContext context, int index) =>
             const SizedBox(width: 10),
         itemBuilder: (BuildContext context, int index) {
-          final VideoInfo item = videos[index];
+          final VideoResource item = videos[index];
           return _VideoCard(video: item);
         },
       ),
@@ -665,7 +612,7 @@ class _FunctionWavePainter extends CustomPainter {
 }
 
 class _VideoCard extends StatefulWidget {
-  final VideoInfo video;
+  final VideoResource video;
 
   const _VideoCard({required this.video});
 
@@ -674,28 +621,22 @@ class _VideoCard extends StatefulWidget {
 }
 
 class _VideoCardState extends State<_VideoCard> {
-  String? _coverUrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _loadCover();
-  }
-
-  Future<void> _loadCover() async {
-    final String url = await widget.video.getCoverUrl();
-    if (mounted) {
-      setState(() {
-        _coverUrl = url;
-      });
-    }
-  }
-
   void _openVideo() {
+    final String bvId = widget.video.bvId;
+    if (bvId.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('暂无对应视频'),
+          duration: Duration(seconds: 1),
+        ),
+      );
+      return;
+    }
+
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) =>
-            VideoPlayerPage(title: widget.video.title, bvId: widget.video.bvId),
+            VideoPlayerPage(title: widget.video.title, bvId: bvId),
       ),
     );
   }
@@ -722,32 +663,34 @@ class _VideoCardState extends State<_VideoCard> {
           child: Stack(
             fit: StackFit.expand,
             children: <Widget>[
-              if (_coverUrl != null && _coverUrl!.isNotEmpty)
-                CachedNetworkImage(
-                  imageUrl: _coverUrl!,
-                  fit: BoxFit.cover,
-                  placeholder: (BuildContext context, String url) =>
-                      Container(color: Colors.grey[200]),
-                  errorWidget:
-                      (BuildContext context, String url, Object error) =>
-                          Container(
-                            color: const Color(0xFFE8EEFF),
-                            child: const Icon(
-                              Icons.video_library,
-                              color: Color(0xFF3F51B5),
-                              size: 40,
-                            ),
-                          ),
-                )
-              else
-                Container(
-                  color: const Color(0xFFE8EEFF),
-                  child: const Icon(
-                    Icons.video_library,
-                    color: Color(0xFF3F51B5),
-                    size: 40,
-                  ),
+              Container(
+                color: const Color(0xFFE8EEFF),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: <Widget>[
+                    const Icon(
+                      Icons.video_library,
+                      color: Color(0xFF3F51B5),
+                      size: 40,
+                    ),
+                    const SizedBox(height: 4),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      child: Text(
+                        widget.video.uploader,
+                        style: const TextStyle(
+                          color: Color(0xFF3F51B5),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w500,
+                        ),
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
+              ),
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -777,7 +720,7 @@ class _VideoCardState extends State<_VideoCard> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        widget.video.subtitle,
+                        '${widget.video.grade} · ${widget.video.module}',
                         style: TextStyle(
                           color: Colors.white.withValues(alpha: 0.8),
                           fontSize: 10,

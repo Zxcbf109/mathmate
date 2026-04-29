@@ -63,8 +63,8 @@ class VivoAiChatService {
     final Map<String, dynamic> body = <String, dynamic>{
       'model': modelId,
       'messages': formattedMessages,
-      'temperature': 0.3,
-      'max_tokens': 1024,
+      'temperature': 0.7,
+      'max_tokens': 2048,
     };
 
     final http.Response response = await http

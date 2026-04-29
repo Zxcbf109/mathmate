@@ -12,6 +12,7 @@ class MathHistory {
   late String ocrContent;
   late String solutionMarkdown;
   late String latexResult;
+  String title = '';  // AI generated title
 
   GeometrySceneEmbedded? geometryScene;
 }
