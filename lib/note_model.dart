@@ -11,6 +11,7 @@ class Note {
   final String category;
   final List<String> tags;
   final bool hasHistoryLink;
+  final String noteType; // 'type' = 打字笔记, 'handwriting' = 手写笔记
 
   Note({
     required this.title,
@@ -23,6 +24,7 @@ class Note {
     this.category = '其他',
     this.tags = const [],
     this.hasHistoryLink = false,
+    this.noteType = 'type',
   });
 
   Map<String, dynamic> toJson() {
@@ -37,6 +39,7 @@ class Note {
       'category': category,
       'tags': tags,
       'hasHistoryLink': hasHistoryLink,
+      'noteType': noteType,
     };
   }
 
@@ -69,6 +72,7 @@ class Note {
       category: parsedCategory,
       tags: List<String>.from(json['tags'] ?? []),
       hasHistoryLink: json['hasHistoryLink'] ?? false,
+      noteType: json['noteType'] ?? 'type',
     );
   }
 }

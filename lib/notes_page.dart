@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
 import 'package:flutter_quill/flutter_quill.dart' as quill;
 import 'note_editor_page.dart';
+import 'note_handwriting_editor_page.dart';
 import 'note_model.dart';
 
 class NotesPage extends StatefulWidget {
@@ -82,10 +83,14 @@ class _NotesPageState extends State<NotesPage> {
     }
   }
 
-  Future<void> _createNewNote() async {
+  Future<void> _createNewNote({bool handwriting = false}) async {
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => const NoteEditorPage()),
+      MaterialPageRoute(
+        builder: (_) => handwriting
+            ? const NoteHandwritingEditorPage()
+            : const NoteEditorPage(),
+      ),
     );
     if (result != null && result is Note) {
       if (!mounted) return;
@@ -100,9 +105,14 @@ class _NotesPageState extends State<NotesPage> {
 
   Future<void> _editNote(int index) async {
     final note = filteredNotes[index];
+    final isHandwriting = note.noteType == 'handwriting';
     final result = await Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => NoteEditorPage(note: note)),
+      MaterialPageRoute(
+        builder: (_) => isHandwriting
+            ? NoteHandwritingEditorPage(note: note)
+            : NoteEditorPage(note: note),
+      ),
     );
 
     if (result != null && result is Note) {
@@ -272,7 +282,41 @@ class _NotesPageState extends State<NotesPage> {
         ],
       ),
       floatingActionButton: FloatingActionButton(
-        onPressed: _createNewNote,
+        onPressed: () {
+          showModalBottomSheet(
+            context: context,
+            builder: (ctx) => SafeArea(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.all(16),
+                    child: Text("新建笔记", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.keyboard, color: Colors.blue),
+                    title: const Text("打字笔记"),
+                    subtitle: const Text("富文本编辑器"),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _createNewNote();
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.draw, color: Colors.orange),
+                    title: const Text("手写笔记"),
+                    subtitle: const Text("手写 + AI 公式识别"),
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _createNewNote(handwriting: true);
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ),
+            ),
+          );
+        },
         child: const Icon(Icons.add),
       ),
       body: filteredNotes.isEmpty
@@ -284,8 +328,26 @@ class _NotesPageState extends State<NotesPage> {
                 final createTimeStr =
                     "${note.createTime.year}-${note.createTime.month.toString().padLeft(2, '0')}-${note.createTime.day.toString().padLeft(2, '0')} ${note.createTime.hour.toString().padLeft(2, '0')}:${note.createTime.minute.toString().padLeft(2, '0')}";
 
+                final isHandwriting = note.noteType == 'handwriting';
                 return ListTile(
-                  title: Text(note.title.isEmpty ? "无标题" : note.title),
+                  leading: isHandwriting
+                      ? const Icon(Icons.draw, color: Colors.orange, size: 28)
+                      : null,
+                  title: Row(
+                    children: [
+                      Expanded(child: Text(note.title.isEmpty ? "无标题" : note.title)),
+                      if (isHandwriting)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(4),
+                            border: Border.all(color: Colors.orange.shade200),
+                          ),
+                          child: const Text("手写", style: TextStyle(fontSize: 10, color: Colors.orange)),
+                        ),
+                    ],
+                  ),
                   subtitle: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
