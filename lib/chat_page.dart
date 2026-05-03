@@ -13,8 +13,9 @@ enum ChatState { idle, streaming, error }
 
 class ChatPage extends StatefulWidget {
   final int? conversationId;
+  final String? initialQuery;
 
-  const ChatPage({super.key, this.conversationId});
+  const ChatPage({super.key, this.conversationId, this.initialQuery});
 
   @override
   State<ChatPage> createState() => _ChatPageState();
@@ -55,6 +56,11 @@ class _ChatPageState extends State<ChatPage> {
     _historyMessages.add(
       VivoChatMessage(role: 'system', content: _systemPrompt),
     );
+    if (widget.initialQuery != null && widget.initialQuery!.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _sendMessage(text: widget.initialQuery!);
+      });
+    }
   }
 
   Future<void> _loadConversation(int id) async {
@@ -938,8 +944,10 @@ class _ChatPageState extends State<ChatPage> {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool streaming = _chatState == ChatState.streaming;
     final bool hasText = _inputController.text.trim().isNotEmpty;
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+    return Hero(
+      tag: 'search-to-chat',
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       decoration: BoxDecoration(
         color: cs.surface,
         border: Border(top: BorderSide(color: cs.outlineVariant)),
@@ -1016,6 +1024,7 @@ class _ChatPageState extends State<ChatPage> {
               ),
           ],
         ),
+      ),
       ),
     );
   }

@@ -34,6 +34,13 @@ class _GradeSelectionPageState extends State<GradeSelectionPage> {
           <String, dynamic>{'label': '高二', 'value': 11},
           <String, dynamic>{'label': '高三', 'value': 12},
         ],
+        '大学': <Map<String, dynamic>>[
+          <String, dynamic>{'label': '大一', 'value': 13},
+          <String, dynamic>{'label': '大二', 'value': 14},
+          <String, dynamic>{'label': '大三', 'value': 15},
+          <String, dynamic>{'label': '大四', 'value': 16},
+          <String, dynamic>{'label': '研究生', 'value': 17},
+        ],
       };
 
   @override
@@ -234,6 +241,9 @@ class _GradeSelectionPageState extends State<GradeSelectionPage> {
         break;
       case '高中':
         icon = Icons.psychology_outlined;
+        break;
+      case '大学':
+        icon = Icons.local_library_outlined;
         break;
       default:
         icon = Icons.book_outlined;

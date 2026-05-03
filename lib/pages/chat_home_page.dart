@@ -7,7 +7,8 @@ import 'package:mathmate/data/conversation_repository.dart';
 import 'package:mathmate/services/model_service.dart';
 
 class ChatHomePage extends StatefulWidget {
-  const ChatHomePage({super.key});
+  final String? initialQuery;
+  const ChatHomePage({super.key, this.initialQuery});
 
   @override
   State<ChatHomePage> createState() => _ChatHomePageState();
@@ -139,6 +140,7 @@ class _ChatHomePageState extends State<ChatHomePage> {
       drawer: _buildDrawer(),
       body: ChatPage(
         conversationId: _currentConversationId,
+        initialQuery: widget.initialQuery,
       ),
     );
   }

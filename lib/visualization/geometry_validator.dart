@@ -28,10 +28,7 @@ class GeometryValidator {
       final SafeJsonParser parser = const SafeJsonParser();
       final GeometryScene scene = GeometryScene.fromJson(json, parser: parser);
       if (scene.elements.isEmpty) {
-        return const GeometryValidationResult(
-          isValid: false,
-          error: 'GeometryJSON elements can not be empty.',
-        );
+        return GeometryValidationResult(isValid: true, scene: scene);
       }
 
       final bool hasBadElement = scene.elements.any(

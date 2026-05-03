@@ -178,26 +178,22 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
 
   void _openSearchChat() {
     final String query = _searchController.text.trim();
-    if (query.isNotEmpty) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => const ChatHomePage(),
-        ),
-      );
-    } else {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (_) => const ChatHomePage(),
-        ),
-      );
-    }
+    Navigator.of(context).push(_ChatTransitionRoute(
+      targetPage: ChatHomePage(initialQuery: query.isNotEmpty ? query : null),
+    ));
   }
 
   Future<void> _loadGradeLevelAndVideos() async {
     final int? grade = await HistoryRepository.instance.getGradeLevel();
     _currentGrade = grade != null
-        ? (grade >= 1 && grade <= 6 ? '小学' : grade >= 7 && grade <= 9 ? '初中' : '高中')
+        ? (grade >= 1 && grade <= 6 ? '小学' : grade >= 7 && grade <= 9 ? '初中' : grade >= 10 && grade <= 12 ? '高中' : '大学')
         : '高中';
+
+    // 大学阶段先不推荐视频
+    if (_currentGrade == '大学') {
+      if (mounted) setState(() => _recommendedVideos = <VideoResource>[]);
+      return;
+    }
 
     // 优先使用AI推荐
     List<VideoResource> videos = await _recommendationService.recommendVideos();
@@ -359,50 +355,53 @@ class _QuestionHomePageState extends State<QuestionHomePage> {
   }
 
   Widget _buildSearchBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: cs.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: <BoxShadow>[
-          BoxShadow(
-            color: cs.shadow,
-            blurRadius: 12,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(Icons.search, color: cs.onSurfaceVariant),
-          const SizedBox(width: 8),
-          Expanded(
-            child: TextField(
-              controller: _searchController,
-              decoration: const InputDecoration(
-                hintText: '搜索题目或问蓝心助手...',
-                border: InputBorder.none,
-              ),
-              onSubmitted: (_) => _openSearchChat(),
+    return Hero(
+      tag: 'search-to-chat',
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: cs.surface,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: cs.shadow,
+              blurRadius: 12,
+              offset: const Offset(0, 3),
             ),
-          ),
-          IconButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const ChatHomePage()),
-              );
-            },
-            icon: const Icon(Icons.chat_bubble_outline_rounded),
-          ),
-          IconButton(
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const HistoryListPage()),
-              );
-            },
-            icon: const Icon(Icons.history_rounded),
-          ),
-        ],
+          ],
+        ),
+        child: Row(
+          children: <Widget>[
+            Icon(Icons.search, color: cs.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: _searchController,
+                decoration: const InputDecoration(
+                  hintText: '搜索题目或问蓝心助手...',
+                  border: InputBorder.none,
+                ),
+                onSubmitted: (_) => _openSearchChat(),
+              ),
+            ),
+            IconButton(
+              onPressed: () {
+                Navigator.of(context).push(_ChatTransitionRoute(
+                  targetPage: const ChatHomePage(),
+                ));
+              },
+              icon: const Icon(Icons.chat_bubble_outline_rounded),
+            ),
+            IconButton(
+              onPressed: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const HistoryListPage()),
+                );
+              },
+              icon: const Icon(Icons.history_rounded),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -902,4 +901,23 @@ class _VideoCardState extends State<_VideoCard> {
       ),
     );
   }
+}
+class _ChatTransitionRoute extends PageRouteBuilder<void> {
+  final Widget targetPage;
+
+  _ChatTransitionRoute({required this.targetPage})
+      : super(
+          pageBuilder: (context, animation, secondaryAnimation) => targetPage,
+          transitionsBuilder: (context, animation, secondaryAnimation, child) {
+            return FadeTransition(
+              opacity: CurvedAnimation(
+                parent: animation,
+                curve: Curves.easeInOut,
+              ),
+              child: child,
+            );
+          },
+          transitionDuration: const Duration(milliseconds: 350),
+          reverseTransitionDuration: const Duration(milliseconds: 300),
+        );
 }

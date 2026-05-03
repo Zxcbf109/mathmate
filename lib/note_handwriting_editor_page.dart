@@ -4,9 +4,12 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:flutter_math_fork/flutter_math.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'note_model.dart';
+import 'services/formula_analysis_service.dart';
 import 'services/handwriting_ocr_service.dart';
 
 enum CanvasMode { write, eraser, pan }
@@ -76,6 +79,7 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
     with TickerProviderStateMixin {
   final GlobalKey _canvasKey = GlobalKey();
   final HandwritingOcrService _ocrService = HandwritingOcrService();
+  final FormulaAnalysisService _formulaService = FormulaAnalysisService();
 
   List<PaperPage> _pages = [PaperPage()];
   int _currentPageIndex = 0;
@@ -85,17 +89,15 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
   Color _selectedColor = Colors.black;
   double _strokeWidth = 3.0;
   bool _isRecognizing = false;
-  bool _showPreview = true;
   CanvasMode _canvasMode = CanvasMode.write;
 
   static const double _eraserWidth = 24.0;
 
   Color get _activeColor =>
-      _canvasMode == CanvasMode.eraser ? Colors.white : _selectedColor;
+      _canvasMode == CanvasMode.eraser ? Colors.grey.withValues(alpha: 0.3) : _selectedColor;
   double get _activeWidth =>
       _canvasMode == CanvasMode.eraser ? _eraserWidth : _strokeWidth;
 
-  // 缩放相关
   double _scale = 1.0;
   double _baseScale = 1.0;
   static const double _minScale = 0.5;
@@ -112,26 +114,35 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
   bool _isDrawing = false;
   bool _isScaling = false;
 
+  // 识别面板控制
+  bool _showRecognitionPanel = false;
+  final DraggableScrollableController _panelController = DraggableScrollableController();
+
+  // 公式分析状态
+  String? _analyzingFormula;
+  final Map<String, _FormulaAnalysis> _analysisCache = {};
+
   final List<Color> _colors = [
-    Colors.black,
-    Colors.redAccent,
-    Colors.blueAccent,
-    Colors.green,
-    Colors.orange,
-    Colors.purple,
-    Colors.brown,
+    Colors.black, Colors.redAccent, Colors.blueAccent,
+    Colors.green, Colors.orange, Colors.purple, Colors.brown,
   ];
 
   @override
   void initState() {
     super.initState();
     _loadNoteContent();
+    _ensureEnv();
   }
 
   @override
   void dispose() {
     _springController?.dispose();
+    _panelController.dispose();
     super.dispose();
+  }
+
+  Future<void> _ensureEnv() async {
+    await dotenv.load(fileName: '.env');
   }
 
   void _loadNoteContent() {
@@ -205,23 +216,17 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
   void _onScaleUpdate(ScaleUpdateDetails details) {
     if (_canvasMode == CanvasMode.pan) {
       if (_isScaling || details.pointerCount > 1) {
-        if (!_isScaling) {
-          _isScaling = true;
-          _baseScale = _scale;
-        }
+        if (!_isScaling) { _isScaling = true; _baseScale = _scale; }
         setState(() {
           _scale = (_baseScale * details.scale).clamp(_minScale, _maxScale);
         });
         return;
       }
-
       final delta = details.focalPointDelta.dx;
       _dragAccumulatedX += delta;
       setState(() => _paperOffset += details.focalPointDelta);
-
       final screenWidth = MediaQuery.of(context).size.width;
       final threshold = screenWidth * _pageFlipThreshold;
-
       if (!_isPageFlipping) {
         if (_dragAccumulatedX > threshold && _currentPageIndex < _pages.length - 1) {
           _isPageFlipping = true;
@@ -233,7 +238,6 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
       }
       return;
     }
-
     if (!_isDrawing) return;
     RenderBox box = _canvasKey.currentContext!.findRenderObject() as RenderBox;
     setState(() {
@@ -249,14 +253,17 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
       _animateBack();
       return;
     }
-
     if (!_isDrawing) return;
     _isDrawing = false;
+    if (_canvasMode == CanvasMode.eraser) {
+      _eraseStrokes();
+      setState(() => _currentPage.currentPoints.clear());
+      return;
+    }
     setState(() {
       if (_currentPage.currentPoints.isNotEmpty) {
         _currentPage.strokes.add(HandwritingStroke(
-          color: _activeColor,
-          width: _activeWidth,
+          color: _activeColor, width: _activeWidth,
           points: List.from(_currentPage.currentPoints),
         ));
         _currentPage.currentPoints.clear();
@@ -270,19 +277,14 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
     final canvasHeight = screenSize.height * 0.45;
     final maxOffsetX = canvasWidth - _paperSize.width;
     final maxOffsetY = canvasHeight - _paperSize.height;
-
-    if (_paperOffset.dx >= maxOffsetX &&
-        _paperOffset.dy >= maxOffsetY &&
-        _paperOffset.dx <= 0 &&
-        _paperOffset.dy <= 0) {
+    if (_paperOffset.dx >= maxOffsetX && _paperOffset.dy >= maxOffsetY &&
+        _paperOffset.dx <= 0 && _paperOffset.dy <= 0) {
       return;
     }
-
     double targetX = _paperOffset.dx.clamp(maxOffsetX, 0.0);
     double targetY = _paperOffset.dy.clamp(maxOffsetY, 0.0);
     final targetOffset = Offset(targetX, targetY);
     if (_paperOffset == targetOffset) return;
-
     _springController?.dispose();
     _springController = AnimationController(
       vsync: this, duration: const Duration(milliseconds: 600),
@@ -290,11 +292,38 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
     _springAnimation = Tween<Offset>(
       begin: _paperOffset, end: targetOffset,
     ).animate(CurvedAnimation(parent: _springController!, curve: Curves.elasticOut));
-
     _springController!.addListener(() {
       setState(() => _paperOffset = _springAnimation!.value);
     });
     _springController!.forward();
+  }
+
+  void _eraseStrokes() {
+    final eraserPath = List<Offset>.from(_currentPage.currentPoints);
+    final threshold = _eraserWidth / 2;
+    setState(() {
+      _currentPage.strokes.removeWhere((stroke) {
+        for (final point in stroke.points) {
+          for (int i = 0; i < eraserPath.length - 1; i++) {
+            if (_pointToSegmentDistance(point, eraserPath[i], eraserPath[i + 1]) < threshold) {
+              return true;
+            }
+          }
+        }
+        return false;
+      });
+    });
+  }
+
+  double _pointToSegmentDistance(Offset p, Offset a, Offset b) {
+    final ab = b - a;
+    final ap = p - a;
+    final dot = ap.dx * ab.dx + ap.dy * ab.dy;
+    final lenSq = ab.dx * ab.dx + ab.dy * ab.dy;
+    if (lenSq == 0) return (p - a).distance;
+    final t = (dot / lenSq).clamp(0.0, 1.0);
+    final proj = Offset(a.dx + t * ab.dx, a.dy + t * ab.dy);
+    return (p - proj).distance;
   }
 
   Future<void> _recognizeHandwriting() async {
@@ -303,20 +332,20 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
           .showSnackBar(const SnackBar(content: Text('当前页没有笔迹')));
       return;
     }
-
     setState(() => _isRecognizing = true);
-
     try {
       RenderRepaintBoundary boundary =
           _canvasKey.currentContext!.findRenderObject() as RenderRepaintBoundary;
       ui.Image image = await boundary.toImage(pixelRatio: 3.0);
       ByteData? byteData = await image.toByteData(format: ui.ImageByteFormat.png);
-
       if (byteData != null && mounted) {
         Uint8List pngBytes = byteData.buffer.asUint8List();
         final result = await _ocrService.recognize(pngBytes);
         if (mounted) {
-          setState(() => _currentPage.recognizedText = result);
+          setState(() {
+            _currentPage.recognizedText = result;
+            _showRecognitionPanel = true;
+          });
         }
       }
     } catch (e) {
@@ -334,6 +363,98 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
         .where((p) => p.recognizedText.isNotEmpty)
         .map((p) => p.recognizedText)
         .join('\n\n');
+  }
+
+  Future<void> _analyzeFormula(String formula) async {
+    setState(() => _analyzingFormula = formula);
+    try {
+      final result = await _formulaService.analyze(formula);
+      if (mounted) {
+        _showAnalysisResult(formula, result.explanation, result.visualization);
+      }
+    } catch (e) {
+      if (mounted) {
+        _showAnalysisResult(formula, '分析出错: $e', '');
+      }
+    } finally {
+      if (mounted) setState(() => _analyzingFormula = null);
+    }
+  }
+
+  void _showAnalysisResult(String formula, String explanation, String visualization) {
+    _analysisCache[formula] = _FormulaAnalysis(
+      formula: formula,
+      explanation: explanation,
+      visualization: visualization,
+    );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => _FormulaAnalysisSheet(
+        formula: formula,
+        explanation: explanation,
+        visualization: visualization,
+        cs: Theme.of(context).colorScheme,
+      ),
+    );
+  }
+
+  // 参考 principia InteractiveBadge: 每行公式旁边的分析按钮
+  Widget _buildFormulaRow(String line) {
+    final isLatex = line.contains(r'\') || line.contains('^') ||
+        line.contains('_') || line.contains('{') || line.contains('}');
+    final isAnalyzing = _analyzingFormula == line;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: isLatex
+                ? Math.tex(
+                    line,
+                    textStyle: const TextStyle(fontSize: 16),
+                    onErrorFallback: (err) => Text(line,
+                        style: const TextStyle(fontSize: 14, color: Colors.blue)),
+                  )
+                : Text(line, style: const TextStyle(fontSize: 16)),
+          ),
+          if (isLatex)
+            GestureDetector(
+              onTap: isAnalyzing ? null : () => _analyzeFormula(line),
+              child: Container(
+                width: 20,
+                height: 20,
+                margin: const EdgeInsets.only(left: 8),
+                decoration: BoxDecoration(
+                  color: cs.primaryContainer,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    if (!isAnalyzing)
+                      BoxShadow(
+                        color: cs.primary.withValues(alpha: 0.4),
+                        blurRadius: 6,
+                      ),
+                  ],
+                ),
+                child: isAnalyzing
+                    ? const SizedBox(
+                        width: 12, height: 12,
+                        child: CircularProgressIndicator(strokeWidth: 1.5),
+                      )
+                    : Icon(Icons.auto_awesome, size: 12, color: cs.primary),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   void _showTitleEditDialog() {
@@ -415,6 +536,18 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
         foregroundColor: cs.onSurface,
         elevation: 0,
         actions: [
+          // 右上角识别面板开关
+          if (_currentPage.recognizedText.isNotEmpty)
+            IconButton(
+              icon: Icon(
+                _showRecognitionPanel ? Icons.visibility_off : Icons.visibility,
+                color: cs.primary,
+              ),
+              tooltip: _showRecognitionPanel ? "关闭识别面板" : "打开识别面板",
+              onPressed: () {
+                setState(() => _showRecognitionPanel = !_showRecognitionPanel);
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.refresh),
             tooltip: "识别",
@@ -432,23 +565,113 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
           ),
         ],
       ),
-      body: OrientationBuilder(
-        builder: (context, orientation) {
-          if (orientation == Orientation.landscape) {
-            return Row(children: [
+      body: Stack(
+        children: [
+          // 主画布区域
+          Column(
+            children: [
               Expanded(child: _buildCanvas()),
-              const VerticalDivider(width: 1),
-              Expanded(child: _buildPreview()),
-            ]);
-          }
-          return Column(children: [
-            Expanded(flex: 3, child: _buildCanvas()),
-            Container(height: 2, color: cs.outlineVariant),
-            Expanded(flex: 2, child: _buildPreview()),
-          ]);
-        },
+              _buildToolbar(),
+            ],
+          ),
+          // 可拖动识别面板（从底部弹出）
+          if (_showRecognitionPanel && _currentPage.recognizedText.isNotEmpty)
+            _buildDraggablePanel(),
+        ],
       ),
-      bottomNavigationBar: _buildToolbar(),
+    );
+  }
+
+  // 可拖动的识别面板
+  Widget _buildDraggablePanel() {
+    return DraggableScrollableSheet(
+      controller: _panelController,
+      initialChildSize: 0.35,
+      minChildSize: 0.12,
+      maxChildSize: 0.75,
+      snap: true,
+      snapSizes: const [0.12, 0.35, 0.75],
+      builder: (context, scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.15),
+                blurRadius: 12,
+                offset: const Offset(0, -4),
+              ),
+            ],
+          ),
+          child: Column(
+            children: [
+              // 拖动手柄 + 标题栏
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                child: Column(
+                  children: [
+                    // 拖动指示条
+                    Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(Icons.auto_awesome, size: 16, color: cs.primary),
+                            const SizedBox(width: 6),
+                            Text('识别结果',
+                                style: TextStyle(
+                                  fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface,
+                                )),
+                          ],
+                        ),
+                        Row(
+                          children: [
+                            // 关闭面板
+                            GestureDetector(
+                              onTap: () => setState(() => _showRecognitionPanel = false),
+                              child: Container(
+                                padding: const EdgeInsets.all(4),
+                                decoration: BoxDecoration(
+                                  color: cs.surfaceContainerHighest,
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(Icons.close, size: 16, color: cs.onSurfaceVariant),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // 内容区域
+              Expanded(
+                child: _isRecognizing
+                    ? const Center(child: CircularProgressIndicator())
+                    : SingleChildScrollView(
+                        controller: scrollController,
+                        padding: const EdgeInsets.all(16),
+                        child: _buildRecognizedContent(_currentPage.recognizedText),
+                      ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -460,7 +683,6 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
         child: Stack(
           children: [
             Positioned.fill(child: Container(color: cs.surfaceContainerLowest)),
-            // 页面指示器
             Positioned(
               bottom: 8, left: 0, right: 0,
               child: Center(
@@ -476,7 +698,6 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
                 ),
               ),
             ),
-            // 可缩放纸张
             Positioned(
               left: 8 + _paperOffset.dx, top: 8 + _paperOffset.dy,
               child: Transform.scale(
@@ -516,51 +737,20 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
                 ),
               ),
             ),
+            // 右上角面板开关浮钮
+            if (!_showRecognitionPanel && _currentPage.recognizedText.isNotEmpty)
+              Positioned(
+                top: 8, right: 8,
+                child: FloatingActionButton.small(
+                  heroTag: 'panel_toggle',
+                  backgroundColor: cs.primary,
+                  foregroundColor: cs.onPrimary,
+                  onPressed: () => setState(() => _showRecognitionPanel = true),
+                  child: const Icon(Icons.auto_awesome, size: 20),
+                ),
+              ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _buildPreview() {
-    return Container(
-      color: cs.surface,
-      margin: const EdgeInsets.all(8),
-      padding: const EdgeInsets.all(12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('识别结果预览',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: cs.onSurface)),
-              TextButton.icon(
-                onPressed: () => setState(() => _showPreview = !_showPreview),
-                icon: Icon(_showPreview ? Icons.visibility : Icons.visibility_off, size: 18),
-                label: Text(_showPreview ? '预览' : '纯文本', style: const TextStyle(fontSize: 12)),
-              ),
-            ],
-          ),
-          const Divider(height: 1),
-          if (_isRecognizing)
-            const Expanded(child: Center(child: CircularProgressIndicator()))
-          else if (_currentPage.recognizedText.isEmpty)
-            Expanded(
-              child: Center(
-                child: Text('点击识别按钮获取结果', style: TextStyle(color: cs.onSurfaceVariant)),
-              ),
-            )
-          else
-            Expanded(
-              child: SingleChildScrollView(
-                child: _showPreview
-                    ? _buildRecognizedContent(_currentPage.recognizedText)
-                    : SelectableText(_currentPage.recognizedText,
-                        style: TextStyle(fontSize: 14, color: cs.onSurface)),
-              ),
-            ),
-        ],
       ),
     );
   }
@@ -573,27 +763,7 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
         widgets.add(const SizedBox(height: 8));
         continue;
       }
-      bool isLatex = line.contains(r'\') ||
-          line.contains('^') || line.contains('_') ||
-          line.contains('{') || line.contains('}');
-      if (isLatex) {
-        try {
-          widgets.add(Padding(
-            padding: const EdgeInsets.symmetric(vertical: 4),
-            child: Math.tex(line, textStyle: const TextStyle(fontSize: 16),
-              onErrorFallback: (err) => Text(line,
-                  style: const TextStyle(fontSize: 14, color: Colors.blue)),
-            ),
-          ));
-        } catch (e) {
-          widgets.add(Text(line, style: const TextStyle(fontSize: 14, color: Colors.blue)));
-        }
-      } else {
-        widgets.add(Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Text(line, style: const TextStyle(fontSize: 16)),
-        ));
-      }
+      widgets.add(_buildFormulaRow(line));
     }
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: widgets);
   }
@@ -609,14 +779,12 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
           child: Row(mainAxisAlignment: MainAxisAlignment.start, children: [
-            // 模式切换
             _buildModeBtn(Icons.edit, '写字', CanvasMode.write),
             const SizedBox(width: 4),
             _buildModeBtn(Icons.auto_fix_high, '橡皮', CanvasMode.eraser),
             const SizedBox(width: 4),
             _buildModeBtn(Icons.pan_tool, '拖动', CanvasMode.pan),
             _divider(),
-            // 背景类型
             IconButton(
               icon: Icon(
                 _currentPage.background == PaperBackground.blank ? Icons.check_box_outline_blank :
@@ -643,21 +811,17 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
                 ),
               ),
             _divider(),
-            // 页管理
             IconButton(icon: const Icon(Icons.add_box_outlined, size: 22), tooltip: "添加纸张", onPressed: _addPage),
             _divider(),
-            // 笔刷粗细（非橡皮模式）
             if (_canvasMode != CanvasMode.eraser) ...[
               _buildPenBtn(2.0, "细"),
               _buildPenBtn(4.0, "中"),
               _buildPenBtn(8.0, "粗"),
               _divider(),
             ],
-            // 撤销清空
             IconButton(icon: const Icon(Icons.undo, size: 22), tooltip: "撤销", onPressed: _undo),
             IconButton(icon: const Icon(Icons.delete_outline, size: 22), tooltip: "清空", onPressed: _clear),
             _divider(),
-            // 颜色（非橡皮模式）
             if (_canvasMode != CanvasMode.eraser)
               ..._colors.map((c) => Padding(
                     padding: const EdgeInsets.only(right: 4),
@@ -740,6 +904,212 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
   }
 }
 
+// 公式分析结果
+class _FormulaAnalysis {
+  final String formula;
+  final String explanation;
+  final String visualization;
+  _FormulaAnalysis({required this.formula, required this.explanation, required this.visualization});
+}
+
+// 公式分析弹窗（参考 principia InteractiveBadge）
+class _FormulaAnalysisSheet extends StatefulWidget {
+  final String formula;
+  final String explanation;
+  final String visualization;
+  final ColorScheme cs;
+
+  const _FormulaAnalysisSheet({
+    required this.formula,
+    required this.explanation,
+    required this.visualization,
+    required this.cs,
+  });
+
+  @override
+  State<_FormulaAnalysisSheet> createState() => _FormulaAnalysisSheetState();
+}
+
+class _FormulaAnalysisSheetState extends State<_FormulaAnalysisSheet> {
+  late WebViewController _webController;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.visualization.isNotEmpty) {
+      _initWebView();
+    }
+  }
+
+  void _initWebView() {
+    _webController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0xFF1A1A2E))
+      ..loadHtmlString(_buildVizHtml());
+  }
+
+  String _buildVizHtml() {
+    return '''
+<!DOCTYPE html>
+<html><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
+  body { margin: 0; overflow: hidden; background: #1A1A2E; color: #fff; display: flex; align-items: center; justify-content: center; min-height: 100vh; font-family: sans-serif; }
+</style>
+</head><body>
+${widget.visualization}
+</body></html>
+''';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cs = widget.cs;
+    return DraggableScrollableSheet(
+      initialChildSize: 0.75,
+      minChildSize: 0.3,
+      maxChildSize: 0.95,
+      expand: false,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: BoxDecoration(
+            color: cs.surface,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              // 标题栏
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: cs.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                ),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 40, height: 4,
+                      decoration: BoxDecoration(
+                        color: cs.onSurfaceVariant.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Icon(Icons.auto_awesome, size: 16, color: Colors.green),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text('公式可视化分析',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface)),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 18),
+                          onPressed: () => Navigator.pop(context),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              // 内容
+              Expanded(
+                child: ListView(
+                  controller: scrollController,
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    // 原公式
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: cs.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('原始公式', style: TextStyle(fontSize: 11, color: cs.onSurfaceVariant)),
+                          const SizedBox(height: 8),
+                          Math.tex(
+                            widget.formula,
+                            textStyle: TextStyle(fontSize: 18, color: cs.onSurface),
+                            onErrorFallback: (err) => SelectableText(widget.formula,
+                                style: TextStyle(fontSize: 14, color: cs.onSurface)),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    // AI 解释（Markdown 渲染为简单文本）
+                    if (widget.explanation.isNotEmpty) ...[
+                      Text('AI 解析', style: TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600, color: cs.primary)),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: cs.primaryContainer.withValues(alpha: 0.3),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: cs.primary.withValues(alpha: 0.2)),
+                        ),
+                        child: _buildMarkdownContent(widget.explanation, cs),
+                      ),
+                    ],
+                    // 可视化
+                    if (widget.visualization.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      Text('交互可视化', style: TextStyle(
+                          fontSize: 13, fontWeight: FontWeight.w600, color: cs.tertiary)),
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: SizedBox(
+                          height: 350,
+                          child: WebViewWidget(controller: _webController),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  // 简单 Markdown 渲染（支持粗体、代码、LaTeX 公式）
+  Widget _buildMarkdownContent(String text, ColorScheme cs) {
+    final lines = text.split('\n');
+    List<Widget> widgets = [];
+    for (var line in lines) {
+      line = line.trim();
+      if (line.isEmpty) {
+        widgets.add(const SizedBox(height: 6));
+        continue;
+      }
+      // 处理粗体
+      String processed = line;
+      bool hasBold = processed.contains('**');
+      processed = processed.replaceAll('**', '');
+      widgets.add(Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Text(processed, style: TextStyle(
+          fontSize: 14, color: cs.onSurface,
+          fontWeight: hasBold ? FontWeight.w600 : FontWeight.normal,
+        )),
+      ));
+    }
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: widgets);
+  }
+}
+
 class _BackgroundPainter extends CustomPainter {
   final PaperBackground backgroundType;
   final double spacing;
@@ -752,7 +1122,6 @@ class _BackgroundPainter extends CustomPainter {
     final paint = Paint()
       ..color = const Color(0xFFD0E0F0)
       ..strokeWidth = 0.5;
-
     if (backgroundType == PaperBackground.lined) {
       double y = spacing;
       while (y < size.height) {
@@ -819,12 +1188,43 @@ class _StrokePainter extends CustomPainter {
       canvas.drawPoints(ui.PointMode.points, points, paint);
       return;
     }
+    if (points.length == 2) {
+      canvas.drawLine(points[0], points[1], paint);
+      return;
+    }
+    final smoothed = _catmullRomSmooth(points);
     final path = Path();
-    path.moveTo(points.first.dx, points.first.dy);
-    for (int i = 1; i < points.length; i++) {
-      path.lineTo(points[i].dx, points[i].dy);
+    path.moveTo(smoothed.first.dx, smoothed.first.dy);
+    for (int i = 1; i < smoothed.length; i++) {
+      path.lineTo(smoothed[i].dx, smoothed[i].dy);
     }
     canvas.drawPath(path, paint);
+  }
+
+  List<Offset> _catmullRomSmooth(List<Offset> points) {
+    final result = <Offset>[points.first];
+    final pts = [points.first, ...points, points.last];
+    for (int i = 0; i < pts.length - 3; i++) {
+      final p0 = pts[i];
+      final p1 = pts[i + 1];
+      final p2 = pts[i + 2];
+      final p3 = pts[i + 3];
+      for (int j = 1; j <= 8; j++) {
+        final t = j / 8.0;
+        final t2 = t * t;
+        final t3 = t2 * t;
+        result.add(Offset(
+          0.5 * (2 * p1.dx + (-p0.dx + p2.dx) * t +
+              (2 * p0.dx - 5 * p1.dx + 4 * p2.dx - p3.dx) * t2 +
+              (-p0.dx + 3 * p1.dx - 3 * p2.dx + p3.dx) * t3),
+          0.5 * (2 * p1.dy + (-p0.dy + p2.dy) * t +
+              (2 * p0.dy - 5 * p1.dy + 4 * p2.dy - p3.dy) * t2 +
+              (-p0.dy + 3 * p1.dy - 3 * p2.dy + p3.dy) * t3),
+        ));
+      }
+    }
+    result.add(points.last);
+    return result;
   }
 
   @override

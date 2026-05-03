@@ -5,6 +5,7 @@ import 'package:mathmate/grade_selection_page.dart';
 import 'package:mathmate/help_support_page.dart';
 import 'package:mathmate/history_list_page.dart';
 import 'package:mathmate/services/theme_service.dart';
+import 'package:mathmate/services/user_profile_service.dart';
 
 class ProfilePage extends StatefulWidget {
   const ProfilePage({super.key});
@@ -14,6 +15,25 @@ class ProfilePage extends StatefulWidget {
 }
 
 class _ProfilePageState extends State<ProfilePage> {
+  final UserProfileService _profileService = UserProfileService();
+
+  @override
+  void initState() {
+    super.initState();
+    _profileService.addListener(_onProfileChanged);
+    _profileService.load();
+  }
+
+  @override
+  void dispose() {
+    _profileService.removeListener(_onProfileChanged);
+    super.dispose();
+  }
+
+  void _onProfileChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
@@ -127,7 +147,7 @@ class _ProfilePageState extends State<ProfilePage> {
                     borderRadius: BorderRadius.circular(12),
                     child: InkWell(
                       borderRadius: BorderRadius.circular(12),
-                      onTap: () {},
+                      onTap: () => _showLogoutDialog(context),
                       child: SizedBox(
                         width: double.infinity,
                         height: 50,
@@ -206,6 +226,7 @@ class _ProfilePageState extends State<ProfilePage> {
   }
 
   Widget _buildHeader(ColorScheme cs) {
+    final profile = _profileService.profile;
     return Align(
       alignment: Alignment.center,
       child: Column(
@@ -234,7 +255,7 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           const SizedBox(height: 14),
           Text(
-            'MathMate_User',
+            profile.nickname,
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w800,
@@ -243,8 +264,31 @@ class _ProfilePageState extends State<ProfilePage> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Level: Math Explorer',
+            profile.grade,
             style: TextStyle(fontSize: 13, color: cs.onSurface.withValues(alpha: 0.5)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showLogoutDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('退出登录'),
+        content: const Text('确定要退出登录吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _profileService.reset();
+            },
+            child: const Text('确定'),
           ),
         ],
       ),

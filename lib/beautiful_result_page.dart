@@ -13,6 +13,7 @@ import 'package:mathmate/models/pipeline_stage.dart';
 import 'package:mathmate/services/math_pipeline_service.dart';
 import 'package:mathmate/visualization/geometry_validator.dart';
 import 'package:mathmate/visualization_page.dart';
+import 'package:mathmate/visualization/jxg_webview.dart';
 import 'package:mathmate/visualization/safe_json_parser.dart';
 import 'package:mathmate/services/katex_pdf_service.dart';
 
@@ -865,10 +866,27 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
                           ),
                           const SizedBox(height: 20),
                         ],
-                        if (_geometryScene != null)
+                        if (_geometryScene != null) ...[
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: SizedBox(
+                              height: 300,
+                              child: JxgWebView(
+                                scene: _geometryScene!,
+                                onEngineError: (msg) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('可视化加载失败: $msg')),
+                                    );
+                                  }
+                                },
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
                           SizedBox(
                             width: double.infinity,
-                            child: ElevatedButton.icon(
+                            child: OutlinedButton.icon(
                               onPressed: () {
                                 Navigator.of(context).push(
                                   MaterialPageRoute(
@@ -879,20 +897,11 @@ class _BeautifulResultPageState extends State<BeautifulResultPage> {
                                   ),
                                 );
                               },
-                              icon: const Icon(
-                                Icons.visibility_outlined,
-                                color: Colors.black87,
-                              ),
-                              label: const Text(
-                                '查看几何可视化',
-                                style: TextStyle(color: Colors.black87),
-                              ),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: const Color(0xFF90CAF9),
-                              ),
+                              icon: const Icon(Icons.fullscreen, size: 18),
+                              label: const Text('全屏查看'),
                             ),
-                          )
-                        else
+                          ),
+                        ] else
                           Container(
                             width: double.infinity,
                             padding: const EdgeInsets.all(12),

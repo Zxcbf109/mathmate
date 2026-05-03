@@ -33,36 +33,55 @@ class VisualizationService {
       );
     }
 
-    try {
-      final dynamic decoded = jsonDecode(geometryText);
-      if (decoded is! Map<String, dynamic>) {
+    VisualizeResult parseGeometry(String geometryText, String raw) {
+      try {
+        final dynamic decoded = jsonDecode(geometryText);
+        if (decoded is! Map<String, dynamic>) {
+          return VisualizeResult(
+            scene: null,
+            rawOutput: raw,
+            error: 'geometryjson 根节点必须是对象。',
+          );
+        }
+        final GeometryValidationResult validation =
+            const GeometryValidator().validate(decoded);
+        if (!validation.isValid || validation.scene == null) {
+          return VisualizeResult(
+            scene: null,
+            rawOutput: raw,
+            error: validation.error ?? 'geometryjson 校验失败。',
+          );
+        }
+        return VisualizeResult(
+          scene: validation.scene!.toJson(),
+          rawOutput: raw,
+        );
+      } catch (e) {
         return VisualizeResult(
           scene: null,
           rawOutput: raw,
-          error: 'geometryjson 根节点必须是对象。',
+          error: 'geometryjson 解析失败: $e',
         );
       }
-
-      final GeometryValidationResult validation =
-          const GeometryValidator().validate(decoded);
-      if (!validation.isValid || validation.scene == null) {
-        return VisualizeResult(
-          scene: null,
-          rawOutput: raw,
-          error: validation.error ?? 'geometryjson 校验失败。',
-        );
-      }
-
-      return VisualizeResult(
-        scene: validation.scene!.toJson(),
-        rawOutput: raw,
-      );
-    } catch (e) {
-      return VisualizeResult(
-        scene: null,
-        rawOutput: raw,
-        error: 'geometryjson 解析失败: $e',
-      );
     }
+
+    VisualizeResult firstResult = parseGeometry(geometryText, raw);
+
+    // 解析失败时重试一次
+    if (firstResult.error != null) {
+      final String retryRaw = await _client.callTextPrompt(
+        prompt: visualizationPrompt,
+        userText:
+            '$userText\n\n上一轮输出格式有误: ${firstResult.error}。请严格按照格式重新输出。',
+      );
+
+      final String? retryGeometryText =
+          ResponseExtractor.extractGeometryJsonText(retryRaw);
+      if (retryGeometryText != null && retryGeometryText.isNotEmpty) {
+        return parseGeometry(retryGeometryText, retryRaw);
+      }
+    }
+
+    return firstResult;
   }
 }
