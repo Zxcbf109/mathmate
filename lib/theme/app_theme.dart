@@ -32,6 +32,8 @@ class AppTheme {
           side: BorderSide.none,
         ),
         surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shadowColor: Colors.transparent,
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: scheme.surface,
@@ -68,6 +70,8 @@ class AppTheme {
           side: BorderSide.none,
         ),
         surfaceTintColor: Colors.transparent,
+        elevation: 0,
+        shadowColor: Colors.transparent,
       ),
       bottomNavigationBarTheme: BottomNavigationBarThemeData(
         backgroundColor: scheme.surface,

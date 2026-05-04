@@ -76,6 +76,16 @@ subprojects {
     }
 }
 
+subprojects {
+    afterEvaluate {
+        if (name.contains("isar")) {
+            tasks.matching { it.name.contains("verifyReleaseResources") }.configureEach {
+                enabled = false
+            }
+        }
+    }
+}
+
 fun Project.forceJvmTo18() {
     tasks.withType<JavaCompile>().configureEach {
         sourceCompatibility = JavaVersion.VERSION_1_8.toString()

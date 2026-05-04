@@ -1122,19 +1122,22 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
   void _showRingColorPicker() {
     showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (ctx) {
-        return _RingColorPickerWidget(
-          initialColor: _selectedColor,
-          onColorChanged: (color) {
-            setState(() => _selectedColor = color);
-          },
-          onConfirm: () {
-            Navigator.pop(ctx);
-          },
-          cs: cs,
+        return SingleChildScrollView(
+          child: _RingColorPickerWidget(
+            initialColor: _selectedColor,
+            onColorChanged: (color) {
+              setState(() => _selectedColor = color);
+            },
+            onConfirm: () {
+              Navigator.pop(ctx);
+            },
+            cs: cs,
+          ),
         );
       },
     );
@@ -1164,6 +1167,7 @@ class _RingColorPickerWidgetState extends State<_RingColorPickerWidget> {
   late double _saturation;
   double _brightness = 1.0;
   Color _currentColor = Colors.black;
+  final GlobalKey _pickerKey = GlobalKey();
 
   @override
   void initState() {
@@ -1183,16 +1187,15 @@ class _RingColorPickerWidgetState extends State<_RingColorPickerWidget> {
     final center = Offset(size.width / 2, size.height / 2);
     final dx = localPos.dx - center.dx;
     final dy = localPos.dy - center.dy;
-    final distance = (dx * dx + dy * dy).clamp(0.0, double.infinity);
+    final distSq = dx * dx + dy * dy;
     final radius = size.width / 2;
 
-    // 如果在圆形外，忽略
-    if (distance > radius * radius) return;
+    if (distSq > radius * radius) return;
 
-    // 角度 → 色相
-    final angle = (atan2(dy, dx) + pi) / (2 * pi); // 0..1
+    // 角度 → 色相 (0..1)
+    final angle = (atan2(dy, dx) + pi) / (2 * pi);
     // 距离 → 饱和度 (中心=0, 边缘=1)
-    final dist = sqrt(distance) / radius;
+    final dist = sqrt(distSq) / radius;
 
     setState(() {
       _hue = angle;
@@ -1204,12 +1207,13 @@ class _RingColorPickerWidgetState extends State<_RingColorPickerWidget> {
 
   @override
   Widget build(BuildContext context) {
+    const double wheelSize = 260;
+
     return Padding(
       padding: const EdgeInsets.all(20),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // 拖动指示条
           Center(
             child: Container(
               width: 40, height: 4,
@@ -1222,23 +1226,26 @@ class _RingColorPickerWidgetState extends State<_RingColorPickerWidget> {
           const SizedBox(height: 20),
           Text('取色器', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: widget.cs.onSurface)),
           const SizedBox(height: 16),
-          // 环形渐变取色盘
-          GestureDetector(
-            onTapDown: (details) => _onPickerTap(details.localPosition, const Size(280, 280)),
-            onPanUpdate: (details) => _onPickerTap(details.localPosition, const Size(280, 280)),
-            child: Center(
-              child: SizedBox(
-                width: 280, height: 280,
-                child: CustomPaint(
-                  painter: _RingPainter(hue: _hue, saturation: _saturation),
-                  child: Center(
-                    child: Container(
-                      width: 44, height: 44,
-                      decoration: BoxDecoration(
-                        color: _currentColor,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 3),
-                        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 6)],
+          // 环形渐变取色盘 — GestureDetector 在 SizedBox 内部，坐标匹配
+          Center(
+            child: SizedBox(
+              key: _pickerKey,
+              width: wheelSize, height: wheelSize,
+              child: GestureDetector(
+                onTapDown: (d) => _onPickerTap(d.localPosition, const Size(wheelSize, wheelSize)),
+                onPanUpdate: (d) => _onPickerTap(d.localPosition, const Size(wheelSize, wheelSize)),
+                child: RepaintBoundary(
+                  child: CustomPaint(
+                    painter: _RingPainter2(),
+                    child: Center(
+                      child: Container(
+                        width: 44, height: 44,
+                        decoration: BoxDecoration(
+                          color: _currentColor,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 3),
+                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 6)],
+                        ),
                       ),
                     ),
                   ),
@@ -1290,7 +1297,7 @@ class _RingColorPickerWidgetState extends State<_RingColorPickerWidget> {
               const SizedBox(width: 16),
               Expanded(
                 child: Text(
-                  '#${_currentColor.toARGB32().toRadixString(16).padLeft(8, '0').substring(2).toUpperCase()}',
+                  '#${(_currentColor.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
                   style: TextStyle(fontSize: 14, fontFamily: 'monospace', color: widget.cs.onSurface),
                 ),
               ),
@@ -1307,50 +1314,38 @@ class _RingColorPickerWidgetState extends State<_RingColorPickerWidget> {
   }
 }
 
-class _RingPainter extends CustomPainter {
-  final double hue;
-  final double saturation;
-
-  _RingPainter({required this.hue, required this.saturation});
+// 2-pass 混合绘制取色盘：SweepGradient + RadialGradient，仅 2 次 GPU 调用
+class _RingPainter2 extends CustomPainter {
+  static const List<Color> _hueStops = [
+    Color(0xFFFF0000), Color(0xFFFFFF00), Color(0xFF00FF00),
+    Color(0xFF00FFFF), Color(0xFF0000FF), Color(0xFFFF00FF), Color(0xFFFF0000),
+  ];
 
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2;
-
-    // 绘制色相+饱和度圆盘
     final rect = Rect.fromCircle(center: center, radius: radius);
 
-    // 绘制多个扇区来近似色相环
-    const int segments = 360;
-    for (int i = 0; i < segments; i++) {
-      final startAngle = i * 2 * pi / segments;
-      final hueColor = HSVColor.fromAHSV(1, i.toDouble(), 1, 1).toColor();
+    // Pass 1: 色相 SweepGradient 圆
+    canvas.drawCircle(center, radius,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..shader = const SweepGradient(colors: _hueStops).createShader(rect),
+    );
 
-      final path = Path();
-      path.moveTo(center.dx, center.dy);
-      path.arcTo(rect, startAngle * 180 / pi, 360 / segments, false);
-      path.close();
+    // Pass 2: 径向饱和度/明度叠加 (中心白→边缘黑，使用 modulate 混合)
+    canvas.drawCircle(center, radius,
+      Paint()
+        ..style = PaintingStyle.fill
+        ..shader = const RadialGradient(
+          colors: [Colors.white, Color(0x00FFFFFF)],
+          stops: [0.0, 0.99],
+        ).createShader(rect),
+    );
 
-      // 径向渐变：中心白色 → 边缘纯色相
-      final gradient = RadialGradient(
-        center: Alignment.center,
-        radius: 1.0,
-        colors: [Colors.white, hueColor],
-        stops: const [0.0, 1.0],
-      );
-
-      canvas.drawPath(
-        path,
-        Paint()
-          ..style = PaintingStyle.fill
-          ..shader = gradient.createShader(rect),
-      );
-    }
-
-    // 绘制外边框
-    canvas.drawCircle(
-      center, radius,
+    // 外边框
+    canvas.drawCircle(center, radius,
       Paint()
         ..style = PaintingStyle.stroke
         ..color = Colors.grey.withValues(alpha: 0.3)
@@ -1359,8 +1354,7 @@ class _RingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _RingPainter oldDelegate) =>
-      hue != oldDelegate.hue || saturation != oldDelegate.saturation;
+  bool shouldRepaint(covariant _RingPainter2 oldDelegate) => false;
 }
 
 // 公式分析结果
@@ -1405,6 +1399,29 @@ class _FormulaAnalysisSheetState extends State<_FormulaAnalysisSheet> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFF1A1A2E))
       ..loadHtmlString(_buildVizHtml());
+  }
+
+  void _openFullScreenViz() {
+    final fullScreenController = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(const Color(0xFF1A1A2E))
+      ..loadHtmlString(_buildVizHtml());
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => Scaffold(
+          backgroundColor: const Color(0xFF1A1A2E),
+          appBar: AppBar(
+            title: Text(widget.formula, style: const TextStyle(fontSize: 14)),
+            backgroundColor: const Color(0xFF1A1A2E),
+            foregroundColor: Colors.white,
+            elevation: 0,
+          ),
+          body: WebViewWidget(controller: fullScreenController),
+        ),
+      ),
+    );
   }
 
   String _buildVizHtml() {
@@ -1522,8 +1539,29 @@ ${widget.visualization}
                     // 可视化
                     if (widget.visualization.isNotEmpty) ...[
                       const SizedBox(height: 16),
-                      Text('交互可视化', style: TextStyle(
-                          fontSize: 13, fontWeight: FontWeight.w600, color: cs.tertiary)),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text('交互可视化', style: TextStyle(
+                                fontSize: 13, fontWeight: FontWeight.w600, color: cs.tertiary)),
+                          ),
+                          GestureDetector(
+                            onTap: () => _openFullScreenViz(),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: cs.primaryContainer,
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                                Icon(Icons.fullscreen, size: 14, color: cs.primary),
+                                const SizedBox(width: 4),
+                                Text('全屏', style: TextStyle(fontSize: 11, color: cs.primary)),
+                              ]),
+                            ),
+                          ),
+                        ],
+                      ),
                       const SizedBox(height: 8),
                       ClipRRect(
                         borderRadius: BorderRadius.circular(12),
@@ -1543,29 +1581,129 @@ ${widget.visualization}
     );
   }
 
-  // 简单 Markdown 渲染（支持粗体、代码、LaTeX 公式）
+  // Markdown + KaTeX 渲染（支持粗体、$...$ 内联公式、$$...$$ 块级公式）
   Widget _buildMarkdownContent(String text, ColorScheme cs) {
     final lines = text.split('\n');
-    List<Widget> widgets = [];
-    for (var line in lines) {
-      line = line.trim();
+    final List<Widget> widgets = [];
+    bool inDisplayMath = false;
+    String displayMathBuffer = '';
+
+    for (int li = 0; li < lines.length; li++) {
+      String line = lines[li].trim();
+
+      // 处理 $$...$$ 块级公式（可能跨行）
+      if (line.startsWith(r'$$') && line.endsWith(r'$$') && line.length > 4) {
+        // 单行 $$...$$
+        final formula = line.substring(2, line.length - 2).trim();
+        widgets.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Math.tex(
+            formula,
+            textStyle: TextStyle(fontSize: 14, color: cs.onSurface),
+            onErrorFallback: (err) => Text(formula,
+                style: TextStyle(fontSize: 14, color: cs.onSurface)),
+          ),
+        ));
+        continue;
+      }
+      if (line.startsWith(r'$$')) {
+        inDisplayMath = true;
+        displayMathBuffer = line.substring(2);
+        continue;
+      }
+      if (inDisplayMath && line.endsWith(r'$$')) {
+        displayMathBuffer += '\n${line.substring(0, line.length - 2)}';
+        final formula = displayMathBuffer.trim();
+        widgets.add(Padding(
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Math.tex(
+            formula,
+            textStyle: TextStyle(fontSize: 14, color: cs.onSurface),
+            onErrorFallback: (err) => Text(formula,
+                style: TextStyle(fontSize: 14, color: cs.onSurface)),
+          ),
+        ));
+        inDisplayMath = false;
+        displayMathBuffer = '';
+        continue;
+      }
+      if (inDisplayMath) {
+        displayMathBuffer += '\n$line';
+        continue;
+      }
       if (line.isEmpty) {
         widgets.add(const SizedBox(height: 6));
         continue;
       }
-      // 处理粗体
-      String processed = line;
-      bool hasBold = processed.contains('**');
-      processed = processed.replaceAll('**', '');
+
+      // 解析行内混合内容：$...$ 公式 + 普通文本 + **粗体**
       widgets.add(Padding(
         padding: const EdgeInsets.symmetric(vertical: 2),
-        child: Text(processed, style: TextStyle(
-          fontSize: 14, color: cs.onSurface,
-          fontWeight: hasBold ? FontWeight.w600 : FontWeight.normal,
-        )),
+        child: _buildInlineMixed(line, cs),
       ));
     }
+
+    // 未闭合的公式块，按普通文本处理
+    if (inDisplayMath && displayMathBuffer.isNotEmpty) {
+      widgets.add(Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2),
+        child: Text(displayMathBuffer.trim(),
+            style: TextStyle(fontSize: 14, color: cs.onSurface)),
+      ));
+    }
+
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: widgets);
+  }
+
+  // 解析单行中的内联 $...$ 和 **粗体**
+  Widget _buildInlineMixed(String line, ColorScheme cs) {
+    final List<InlineSpan> spans = [];
+    int i = 0;
+    while (i < line.length) {
+      // 匹配 $...$ 内联公式
+      if (line[i] == r'$') {
+        final end = line.indexOf(r'$', i + 1);
+        if (end != -1) {
+          final formula = line.substring(i + 1, end);
+          spans.add(WidgetSpan(
+            alignment: PlaceholderAlignment.middle,
+            child: Math.tex(
+              formula,
+              textStyle: TextStyle(fontSize: 14, color: cs.onSurface),
+              onErrorFallback: (err) => Text(formula,
+                  style: TextStyle(fontSize: 14, color: cs.onSurface)),
+            ),
+          ));
+          i = end + 1;
+          continue;
+        }
+      }
+      // 匹配 **粗体**
+      if (line.substring(i).startsWith('**')) {
+        final end = line.indexOf('**', i + 2);
+        if (end != -1) {
+          final boldText = line.substring(i + 2, end);
+          spans.add(TextSpan(
+            text: boldText,
+            style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: cs.onSurface),
+          ));
+          i = end + 2;
+          continue;
+        }
+      }
+      // 普通文本：收集到下一个特殊标记
+      int next = line.length;
+      final nextDollar = line.indexOf(r'$', i);
+      if (nextDollar != -1) next = nextDollar;
+      final nextBold = line.indexOf('**', i);
+      if (nextBold != -1 && nextBold < next) next = nextBold;
+      spans.add(TextSpan(
+        text: line.substring(i, next),
+        style: TextStyle(fontSize: 14, color: cs.onSurface),
+      ));
+      i = next;
+    }
+    return RichText(text: TextSpan(children: spans));
   }
 }
 
