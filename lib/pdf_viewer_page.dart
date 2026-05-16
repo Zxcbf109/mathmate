@@ -102,35 +102,7 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
 
   Future<bool> _onWillPop() async {
     if (!_isDirty) return true;
-    final result = await showDialog<String>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('保存标注'),
-        content: const Text('有未保存的标注，是否保存？'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 'discard'),
-            child: const Text('不保存', style: TextStyle(color: Colors.red)),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 'cancel'),
-            child: const Text('取消', style: TextStyle(color: Colors.grey)),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, 'save'),
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    );
-    if (result == 'save') {
-      await _saveAndPop();
-      return true;
-    }
-    if (result == 'discard') {
-      Navigator.pop(context);
-      return true;
-    }
+    await _saveAndPop();
     return false;
   }
 
@@ -138,6 +110,10 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
     final file = File(_note.pdfPath);
     final bytes = file.readAsBytesSync();
     final base64Pdf = base64Encode(bytes);
+
+    final pdfJsSrc = await rootBundle.loadString('assets/pdfjs/pdf.min.js');
+    final workerJsSrc =
+        await rootBundle.loadString('assets/pdfjs/pdf.worker.min.js');
 
     final html = '''
 <!DOCTYPE html>
@@ -151,12 +127,15 @@ class _PdfViewerPageState extends State<PdfViewerPage> {
     canvas { margin: 10px 0; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
     .page-container { display: flex; flex-direction: column; align-items: center; padding: 20px 0; }
   </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <script>
+$pdfJsSrc
+  </script>
 </head>
 <body>
   <div class="page-container" id="container"></div>
   <script>
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    var workerBlob = new Blob([atob('${base64Encode(utf8.encode(workerJsSrc))}')], {type: 'application/javascript'});
+    pdfjsLib.GlobalWorkerOptions.workerSrc = URL.createObjectURL(workerBlob);
     var pdfDoc = null;
     var currentPage = 1;
     var totalPages = 0;

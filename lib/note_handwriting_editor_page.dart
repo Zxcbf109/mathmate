@@ -1,6 +1,5 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
@@ -13,6 +12,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'note_model.dart';
 import 'services/formula_analysis_service.dart';
 import 'services/handwriting_ocr_service.dart';
+import 'widgets/ring_color_picker.dart';
 
 enum CanvasMode { write, eraser, pan }
 enum PaperBackground { blank, lined, grid }
@@ -485,39 +485,19 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
         Uint8List pngBytes = byteData.buffer.asUint8List();
         final result = await _ocrService.recognize(pngBytes);
         if (mounted) {
-          // 解析识别结果：保持多行 LaTeX 块完整性
+          // 将识别结果解析为 RecognizedBlock 列表，位置跟随笔迹区域
           final blocks = <RecognizedBlock>[];
           double yOffset = 0;
           final startX = strokeBounds.left + 20;
           final startY = strokeBounds.top;
-          final List<String> lines = result.split('\n');
-          for (int i = 0; i < lines.length; i++) {
-            final String trimmed = lines[i].trim();
+          for (final line in result.split('\n')) {
+            final trimmed = line.trim();
             if (trimmed.isEmpty) continue;
-            // 检测 \begin{...} 开头但未闭合的块，向下收集直到匹配的 \end{...}
-            final beginMatch = RegExp(r'\\begin\{(\w+)\}').firstMatch(trimmed);
-            final endMatch = RegExp(r'\\end\{(\w+)\}').firstMatch(trimmed);
-            if (beginMatch != null &&
-                (endMatch == null || endMatch.group(1) != beginMatch.group(1))) {
-              final StringBuffer buf = StringBuffer(trimmed);
-              final String envName = beginMatch.group(1)!;
-              while (i + 1 < lines.length) {
-                i++;
-                buf.write('\n${lines[i].trim()}');
-                if (RegExp('\\\\end\\{$envName\\}').hasMatch(lines[i])) break;
-              }
-              blocks.add(RecognizedBlock(
-                text: buf.toString(),
-                position: Offset(startX, startY + yOffset),
-                scale: 1.0,
-              ));
-            } else {
-              blocks.add(RecognizedBlock(
-                text: trimmed,
-                position: Offset(startX, startY + yOffset),
-                scale: 1.0,
-              ));
-            }
+            blocks.add(RecognizedBlock(
+              text: trimmed,
+              position: Offset(startX, startY + yOffset),
+              scale: 1.0,
+            ));
             yOffset += 48;
           }
           setState(() {
@@ -708,9 +688,36 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
 
   ColorScheme get cs => Theme.of(context).colorScheme;
 
+  void _autoSaveAndPop() {
+    bool hasContent = _pages.any((page) => page.strokes.isNotEmpty);
+    if (!hasContent) {
+      Navigator.pop(context);
+      return;
+    }
+    final title = (widget.note?.title.isNotEmpty == true)
+        ? widget.note!.title
+        : '手写笔记 ${DateTime.now().toString().substring(0, 16)}';
+    final saveData = {'pages': _pages.map((p) => p.toJson()).toList()};
+    final note = Note(
+      title: title,
+      content: jsonEncode(saveData),
+      createTime: widget.note?.createTime ?? DateTime.now(),
+      updateTime: DateTime.now(),
+      noteType: 'handwriting',
+      imagePaths: widget.note?.imagePaths ?? [],
+    );
+    Navigator.pop(context, note);
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _autoSaveAndPop();
+      },
+      child: Scaffold(
       backgroundColor: cs.surfaceContainerLowest,
       appBar: AppBar(
         title: Text("手写笔记 (${_currentPageIndex + 1}/${_pages.length})",
@@ -761,6 +768,7 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
           if (_showRecognitionPanel && _currentPage.recognizedText.isNotEmpty)
             _buildDraggablePanel(),
         ],
+      ),
       ),
     );
   }
@@ -1266,7 +1274,7 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
       ),
       builder: (ctx) {
         return SingleChildScrollView(
-          child: _RingColorPickerWidget(
+          child: RingColorPicker(
             initialColor: _selectedColor,
             onColorChanged: (color) {
               setState(() => _selectedColor = color);
@@ -1274,226 +1282,12 @@ class _NoteHandwritingEditorPageState extends State<NoteHandwritingEditorPage>
             onConfirm: () {
               Navigator.pop(ctx);
             },
-            cs: cs,
+            colorScheme: cs,
           ),
         );
       },
     );
   }
-}
-
-// 环形渐变取色器
-class _RingColorPickerWidget extends StatefulWidget {
-  final Color initialColor;
-  final ValueChanged<Color> onColorChanged;
-  final VoidCallback onConfirm;
-  final ColorScheme cs;
-
-  const _RingColorPickerWidget({
-    required this.initialColor,
-    required this.onColorChanged,
-    required this.onConfirm,
-    required this.cs,
-  });
-
-  @override
-  State<_RingColorPickerWidget> createState() => _RingColorPickerWidgetState();
-}
-
-class _RingColorPickerWidgetState extends State<_RingColorPickerWidget> {
-  late double _hue;
-  late double _saturation;
-  double _brightness = 1.0;
-  Color _currentColor = Colors.black;
-  final GlobalKey _pickerKey = GlobalKey();
-
-  @override
-  void initState() {
-    super.initState();
-    final hsv = HSVColor.fromColor(widget.initialColor);
-    _hue = hsv.hue / 360;
-    _saturation = hsv.saturation;
-    _brightness = hsv.value;
-    _currentColor = widget.initialColor;
-  }
-
-  Color _hsvToColor(double h, double s, double v) {
-    return HSVColor.fromAHSV(1, h * 360, s.clamp(0.0, 1.0), v.clamp(0.0, 1.0)).toColor();
-  }
-
-  void _onPickerTap(Offset localPos, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final dx = localPos.dx - center.dx;
-    final dy = localPos.dy - center.dy;
-    final distSq = dx * dx + dy * dy;
-    final radius = size.width / 2;
-
-    if (distSq > radius * radius) return;
-
-    // 角度 → 色相 (0..1)
-    final raw = atan2(dy, dx);
-    final angle = (raw < 0 ? raw + 2 * pi : raw) / (2 * pi);
-    // 距离 → 饱和度 (中心=0, 边缘=1)
-    final dist = sqrt(distSq) / radius;
-
-    setState(() {
-      _hue = angle;
-      _saturation = dist.clamp(0.0, 1.0);
-      _currentColor = _hsvToColor(_hue, _saturation, _brightness);
-      widget.onColorChanged(_currentColor);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    const double wheelSize = 260;
-
-    return Padding(
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Center(
-            child: Container(
-              width: 40, height: 4,
-              decoration: BoxDecoration(
-                color: widget.cs.onSurfaceVariant.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          const SizedBox(height: 20),
-          Text('取色器', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: widget.cs.onSurface)),
-          const SizedBox(height: 16),
-          // 环形渐变取色盘 — GestureDetector 在 SizedBox 内部，坐标匹配
-          Center(
-            child: SizedBox(
-              key: _pickerKey,
-              width: wheelSize, height: wheelSize,
-              child: GestureDetector(
-                onTapDown: (d) => _onPickerTap(d.localPosition, const Size(wheelSize, wheelSize)),
-                onPanUpdate: (d) => _onPickerTap(d.localPosition, const Size(wheelSize, wheelSize)),
-                child: RepaintBoundary(
-                  child: CustomPaint(
-                    painter: _RingPainter2(),
-                    child: Center(
-                      child: Container(
-                        width: 44, height: 44,
-                        decoration: BoxDecoration(
-                          color: _currentColor,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 3),
-                          boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.3), blurRadius: 6)],
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          // 明度滑块
-          Row(
-            children: [
-              Text('明度', style: TextStyle(fontSize: 12, color: widget.cs.onSurfaceVariant)),
-              Expanded(
-                child: Slider(
-                  value: _brightness, min: 0, max: 1,
-                  activeColor: _currentColor,
-                  onChanged: (v) {
-                    setState(() {
-                      _brightness = v;
-                      _currentColor = _hsvToColor(_hue, _saturation, _brightness);
-                      widget.onColorChanged(_currentColor);
-                    });
-                  },
-                ),
-              ),
-              Container(
-                width: 28, height: 28,
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: widget.cs.outlineVariant),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          // 当前颜色预览 + 确认按钮
-          Row(
-            children: [
-              Container(
-                width: 48, height: 48,
-                decoration: BoxDecoration(
-                  color: _currentColor,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: widget.cs.outlineVariant, width: 2),
-                  boxShadow: [BoxShadow(color: _currentColor.withValues(alpha: 0.4), blurRadius: 8)],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Text(
-                  '#${(_currentColor.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}',
-                  style: TextStyle(fontSize: 14, fontFamily: 'monospace', color: widget.cs.onSurface),
-                ),
-              ),
-              ElevatedButton(
-                onPressed: widget.onConfirm,
-                child: const Text('确定'),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-        ],
-      ),
-    );
-  }
-}
-
-// 2-pass 混合绘制取色盘：SweepGradient + RadialGradient，仅 2 次 GPU 调用
-class _RingPainter2 extends CustomPainter {
-  static const List<Color> _hueStops = [
-    Color(0xFFFF0000), Color(0xFFFFFF00), Color(0xFF00FF00),
-    Color(0xFF00FFFF), Color(0xFF0000FF), Color(0xFFFF00FF), Color(0xFFFF0000),
-  ];
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-    final rect = Rect.fromCircle(center: center, radius: radius);
-
-    // Pass 1: 色相 SweepGradient 圆
-    canvas.drawCircle(center, radius,
-      Paint()
-        ..style = PaintingStyle.fill
-        ..shader = const SweepGradient(colors: _hueStops).createShader(rect),
-    );
-
-    // Pass 2: 径向饱和度/明度叠加 (中心白→边缘黑，使用 modulate 混合)
-    canvas.drawCircle(center, radius,
-      Paint()
-        ..style = PaintingStyle.fill
-        ..shader = const RadialGradient(
-          colors: [Colors.white, Color(0x00FFFFFF)],
-          stops: [0.0, 0.99],
-        ).createShader(rect),
-    );
-
-    // 外边框
-    canvas.drawCircle(center, radius,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..color = Colors.grey.withValues(alpha: 0.3)
-        ..strokeWidth = 2,
-    );
-  }
-
-  @override
-  bool shouldRepaint(covariant _RingPainter2 oldDelegate) => false;
 }
 
 // 公式分析结果
@@ -1794,15 +1588,15 @@ ${widget.visualization}
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: widgets);
   }
 
-  // 解析单行中的内联 $...$ 和 **粗体**（跳过 \$ 转义符）
+  // 解析单行中的内联 $...$ 和 **粗体**
   Widget _buildInlineMixed(String line, ColorScheme cs) {
     final List<InlineSpan> spans = [];
     int i = 0;
     while (i < line.length) {
-      // 匹配 $...$ 内联公式（跳过 \$ 转义符）
-      if (line[i] == r'$' && (i == 0 || line[i - 1] != r'\')) {
+      // 匹配 $...$ 内联公式
+      if (line[i] == r'$') {
         final end = line.indexOf(r'$', i + 1);
-        if (end != -1 && (end == 0 || line[end - 1] != r'\')) {
+        if (end != -1) {
           final formula = line.substring(i + 1, end);
           spans.add(WidgetSpan(
             alignment: PlaceholderAlignment.middle,
