@@ -15,7 +15,7 @@ import 'package:mathmate/pages/chat_home_page.dart';
 import 'package:mathmate/notes_page.dart';
 import 'package:mathmate/geogebra_page.dart';
 import 'package:mathmate/data/conversation_repository.dart';
-import 'package:mathmate/data/history_models.dart';
+import 'package:mathmate/data/hive_models.dart';
 import 'package:mathmate/data/history_repository.dart';
 import 'package:mathmate/data/video_resources.dart';
 import 'package:mathmate/grade_selection_page.dart';
